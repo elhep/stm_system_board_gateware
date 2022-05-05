@@ -1,6 +1,10 @@
 from migen import *
 from migen.genlib.coding import Decoder
 from migen.genlib.cdc import PulseSynchronizer, BusSynchronizer
+from migen.genlib.misc import timeline
+from itertools import chain
+from functools import reduce
+from operator import or_
 
 
 class SR(Module):
@@ -79,9 +83,11 @@ class DiotLEC_Simple(Module):
         self.miso = Signal()
         self.cs = Signal()
         self.spi_clk = Signal()
-        self.output = []
+        self.slot = [[] for _ in range(self.slots_num)]
         for i in range(self.slots_num):
-            self.output.append(Signal(16, name="output{}".format(i)))
+            for j in range(16):
+                self.slot[i].append(TSTriple(name="slot{i}_{j}".format(i=i, j=j)))
+        self.io_interrupt = Signal(self.slots_num)
 
         # Clocks
         self.clock_domains.cd_sys = ClockDomain("sys")
@@ -96,11 +102,20 @@ class DiotLEC_Simple(Module):
         ]
 
         self.submodules.address_reg = SR(self.address_reg_len)
-        self.output_reg = []
-        for i in range(self.slots_num):
-            self.output_reg.append(SR(16))
-            setattr(self.submodules, "output_reg{}".format(i), self.output_reg[i])
-        self.select = Cat([self.output_reg[i].sel for i in range(self.slots_num)])
+        self.registers = []
+        for _ in range(self.slots_num):
+            self.add_register("output")
+        for _ in range(self.slots_num):
+            self.add_register("input")
+        for _ in range(self.slots_num):
+            self.add_register("dir")
+        for _ in range(self.slots_num):
+            self.add_register("interrupt")
+        for _ in range(self.slots_num):
+            self.add_register("interrupt_mask")
+        for _ in range(self.slots_num):
+            self.add_register("interrupt_clear")
+        self.select = Cat([register.sel for register in self.registers])
 
         self.select_decoder = Decoder(2**self.address_reg_len+1)
         self.submodules += self.select_decoder
@@ -157,14 +172,13 @@ class DiotLEC_Simple(Module):
                              {}
                              )
         for i in range(self.slots_num):
-            miso_selector.cases[C(i)] = [self.miso.eq(self.output_reg[i].sdo)]
+            miso_selector.cases[C(i)] = [self.miso.eq(self.registers[i].sdo)]
 
         self.comb += [
+            # SPI
             self.address_reg.sdi.eq(self.mosi),
             self.address_reg.do.eq(self.address_reg.di),
-            [self.output_reg[i].sdi.eq(self.mosi) for i in range(self.slots_num)],
-            [self.output[i].eq(self.output_reg[i].di) for i in range(self.slots_num)],
-            [self.output_reg[i].do.eq(self.output_reg[i].di) for i in range(self.slots_num)],
+            [register.sdi.eq(self.mosi) for register in self.registers],
             If((self.counter1 >= C(self.address_reg_len)) & (self.counter1 < C(self.address_reg_len + 16)),
                self.select_decoder.i.eq(self.address_reg.di + 1),
                ).Else(
@@ -177,7 +191,57 @@ class DiotLEC_Simple(Module):
             ),
             self.address_reg.sel.eq(self.select_decoder.o[0] & self.cs),
             self.select.eq(self.select_decoder.o[1:]),
+
+            # These registers hold their value when written to
+            [register.do.eq(register.di) for register in self.output + self.dir + self.interrupt_mask],
+
+            [self.slot[i][j].o.eq(self.output[i].di[j]) for i in range(self.slots_num) for j in range(16)],
+            [self.input[i].do[j].eq(self.slot[i][j].i) for i in range(self.slots_num) for j in range(16)],
+            [self.slot[i][j].oe.eq(self.dir[i].di[j]) for i in range(self.slots_num) for j in range(16)],
+
         ]
+
+        # Interrupts
+        flat_input = [self.input[i].do[j] for i in range(self.slots_num) for j in range(16)]
+        flat_dir = [self.dir[i].di[j] for i in range(self.slots_num) for j in range(16)]
+        flat_interrupt = [self.interrupt[i].do[j] for i in range(self.slots_num) for j in range(16)]
+        flat_interrupt_clear = [self.interrupt_clear[i].di[j] for i in range(self.slots_num) for j in range(16)]
+        flat_interrupt_mask = [self.interrupt_mask[i].di[j] for i in range(self.slots_num) for j in range(16)]
+        for (input, dir, interrupt, clear, mask) in zip(flat_input, flat_dir, flat_interrupt, flat_interrupt_clear, flat_interrupt_mask):
+            edge = Signal(2)
+            self.sync.sys += [
+                edge[1].eq(edge[0]),
+                edge[0].eq(input),
+                If((edge[0] ^ edge[1]) & (mask & (~dir)),
+                    interrupt.eq(1),
+                ).Elif(clear,
+                    interrupt.eq(0)
+                )
+            ]
+
+        # self.sync.sys += [
+        #     [interrupt_clear_reg.do.eq(0) for interrupt_clear_reg in self.interrupt_clear],
+        # ]
+        # for i in range(self.slots_num):
+            # cd = getattr(self.sync, "interrupt_clear{}_le".format(i+1))
+            # cd += timeline(True, [(1, [self.interrupt_clear[i].sel.eq(1)]), (2, [self.interrupt_clear[i].sel.eq(0)])])
+            # cd += self.interrupt_clear[i].di.eq(self.interrupt_clear[i].do)
+            # ResetInserter(clock_domains=["sck1", "le"])(self.interrupt_clear[i])
+            # self.sync.sys += self.interrupt_clear[i].cd_sck1.rst.eq(1)
+
+        self.comb += [self.io_interrupt[i].eq(reduce(or_, self.interrupt[i].do & self.interrupt_mask[i].di)) for i in range(self.slots_num)]
+
+    def add_register(self, name):
+        assert len(self.registers) < 2**self.address_reg_len
+        sr = SR(16)
+        # add it to named register list
+        if not hasattr(self, name):
+            setattr(self, name, [])
+        getattr(self, name).append(sr)
+        # add it to all registers list
+        self.registers.append(sr)
+        # add it to submodules
+        setattr(self.submodules, "{}{}".format(name, len(getattr(self, name))), sr)
 
 
 class SilpaFPGA(Module):
@@ -187,30 +251,65 @@ class SilpaFPGA(Module):
         self.logic = DiotLEC_Simple(address_reg_len=6, slots=8)
         self.submodules += self.logic
 
+        for slot in [self.logic.slot[0]]:
+            io = platform.request("slot")
+            for i, triple in enumerate(slot):
+                self.specials += triple.get_tristate(io[i])
+
+        self.r_led = platform.request("user_led")
+        self.g_led = platform.request("user_led")
+        self.b_led = platform.request("user_led")
+
         spi = platform.request("spi", 0)
         self.comb += [
             self.logic.mosi.eq(spi.mosi),
             self.logic.miso.eq(spi.miso),
-            self.logic.cs.eq(~spi.cs_n),
+            self.logic.cs.eq(spi.cs_n),
             self.logic.spi_clk.eq(spi.clk),
-            self.cd_sys.clk.eq(platform.request("clk48", 0))
+            self.cd_sys.clk.eq(platform.request("clk48", 0)),
+            self.r_led.eq(self.logic.io_interrupt[0]),
+            self.g_led.eq(self.logic.slot[0][0].o)
+        ]
+
+        counter = Signal(24)
+        self.sync += [
+            counter.eq(counter+1),
+            If(counter == 0,
+               self.b_led.eq(~self.b_led))
         ]
         # platform.add_period_constraint(self.cd_sys.clk, 20.83)
         platform.add_period_constraint(spi.clk, 20)
         # platform.request("GPIO", 0)
 
+
+from migen.fhdl.module import Module
+from migen.fhdl.bitcontainer import value_bits_sign
+class LatticeECP5TrellisTristateImplDiamond(Module):
+    def __init__(self, io, o, oe, i):
+        nbits, sign = value_bits_sign(io)
+        for bit in range(nbits):
+            self.specials += Instance("BB",
+                i_B   = io[bit] if nbits > 1 else io,
+                i_I   = o[bit]  if nbits > 1 else o,
+                o_O   = i[bit]  if nbits > 1 else i,
+                i_T   = ~oe
+            )
+
+
+class LatticeECP5TrellisTristateDiamond(Module):
+    @staticmethod
+    def lower(dr):
+        return LatticeECP5TrellisTristateImplDiamond(dr.target, dr.o, dr.oe, dr.i)
+
+
 if __name__ == "__main__":
     from gsd_orangecrab import Platform
-    from migen.fhdl.verilog import convert
     platform = Platform(device="85F")
     silpa_fpga = SilpaFPGA(platform)
-    # platform.build(silpa_fpga, build_name="silpa_fpga")
 
-    #Simulation
-    logic = DiotLEC_Simple()
-    #
-    ios = {logic.mosi, logic.miso, logic.cs, logic.spi_clk, logic.cd_sys.clk, logic.cd_sys.rst}
-    for item in logic.output:
-        ios.add(item)
-    convert(logic, ios=ios).write("output.v")
-    # convert(silpa_fpga).write("output.v")
+    from migen.fhdl.specials import Tristate
+    sim = False
+    so = {}
+    if sim:
+        so = {Tristate: LatticeECP5TrellisTristateDiamond}
+    platform.build(silpa_fpga, build_name="silpa_fpga", run=not sim, special_overrides=so)

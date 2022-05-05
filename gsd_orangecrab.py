@@ -178,9 +178,15 @@ _io_r0_2 = [
     ("spi", 0,
          Subsignal("clk", Pins("R17")),
          Subsignal("mosi", Pins("N16")),
-         Subsignal("cs_n", Pins("N17")),
+         Subsignal("cs_n", Pins("N17")),  # 0 on PCB
          Subsignal("miso", Pins("N15")),
          IOStandard("LVCMOS33")
+    ),
+
+    ("slot", 0,
+        Pins("M18 C10 C9 B10 B9 C8 B8 A8 H2 J2 L4 N3 N4 H4 G4 T17"),
+        #     1   SDA SCL 5  6  9  10 11 12 13 A0 A1 A2 A3 A4 A5
+        IOStandard("LVCMOS33")
     )
 ]
 

@@ -116,7 +116,7 @@
          (pkgs.python3.withPackages(f: [ migen microscope litex ]))
           pkgs.yosys
           pkgs.nextpnr
-          pkgs.icestorm
+          pkgs.trellis
           pkgs.dfu-util
         ];
       };

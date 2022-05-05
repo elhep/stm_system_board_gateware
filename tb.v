@@ -1,4 +1,5 @@
 `timescale 1ns / 100ps
+//`include  "build/silpa_fpga.v"
 
 module tb_diot_lec();
 	
@@ -15,24 +16,27 @@ reg              spi_mosi;
 wire              spi_miso;
 reg              spi_cs;
 
-wire     [data_w-1:0]    output0;
+reg     [data_w-1:0]    output0;
 wire     [data_w-1:0]    output1;
 reg               sys_clk;
 
 reg [addr_w-1:0] addr_read;
 reg [data_w-1:0] data_read;
 
+wire interrupt;
+
 integer error=0;
 
-top uut (
-    .sys_clk           (   sys_clk),
-    .sys_rst           (    rst           ),
-    .spi_clk (spi_clk),
-	.mosi (spi_mosi),
-	.miso (spi_miso),
-	.cs (spi_cs),
-	.output0(output0),
-	.output1(output1)
+silpa_fpga uut (
+    .clk480           (   sys_clk),
+    //.sys_rst           (    rst           ),
+    .spi0_clk (spi_clk),
+	.spi0_mosi (spi_mosi),
+	.spi0_miso (spi_miso),
+	.spi0_cs_n (spi_cs),
+	.slot(output0),
+	.user_led(interrupt)
+	//.slot1(output1)
 );
 
 always #(SYS_PERIOD/2) sys_clk = ~sys_clk;
@@ -75,6 +79,36 @@ task automatic spi_write_and_check(input [addr_w-1:0] addr, input [data_w-1:0] d
 	end
 endtask
 
+task automatic set_direction(input [2:0] slot, input direction);
+	begin
+		#20 spi_transaction(slot+16, 16'hffff*direction, addr_read, data_read);
+	end
+endtask
+
+task automatic set_output(input [2:0] slot, input [data_w-1:0] data);
+	begin
+		#20 spi_transaction(slot, data, addr_read, data_read);
+	end
+endtask
+
+task automatic read_input(input [2:0] slot, input [data_w-1:0] data, output [data_w-1:0] data_read);
+	begin
+		#20 spi_transaction(slot+8, 16'h0000, addr_read, data_read);
+	end
+endtask
+
+task automatic set_int_mask(input [2:0] slot, input [data_w-1:0] data);
+	begin
+		#20 spi_transaction(slot+32, data, addr_read, data_read);
+	end
+endtask
+
+task automatic clear_int(input [2:0] slot, input [data_w-1:0] data);
+	begin
+		#20 spi_transaction(slot+40, data, addr_read, data_read);
+	end
+endtask
+
 
 // ---------------------------------------------------------------------------------------------------------------------
 // RESET AND TIMEOUT
@@ -89,6 +123,7 @@ initial begin
   spi_clk = 1'b0;
   spi_mosi = 1'b0;
   spi_cs = 1'b0;
+  output0 = 16'bzzzzzzzzzzzzzzzz;
 
   #50 rst = 1'b0;
   
@@ -97,6 +132,15 @@ initial begin
   spi_write_and_check(6'h00, 16'h2a2a);
   spi_write_and_check(6'h01, 16'hffff);
   spi_write_and_check(6'h07, 16'h0000);
+
+  set_direction(3'd0, 1); //output
+  set_output(3'd0, 16'haaaa);
+  set_direction(3'd0, 0); //input
+  #20 output0 = 16'h0000;
+  set_int_mask(3'd0, 16'hffff);
+  #20 output0 = 16'h0001;
+  clear_int(3'd0, 16'hffff);
+  
   
   #40000 if(error==0)
     $display("Testbench timed out, no error."); // Timeout
