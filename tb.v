@@ -5,7 +5,7 @@ module tb_diot_lec();
 	
 parameter SYS_PERIOD = 12;
 parameter SPI_PERIOD = 12;
-parameter addr_w = 6;
+parameter addr_w = 8;
 parameter data_w = 16;
 	
 integer i;
@@ -23,7 +23,7 @@ reg               sys_clk;
 reg [addr_w-1:0] addr_read;
 reg [data_w-1:0] data_read;
 
-wire interrupt;
+wire interrupt, led_g, led_b;
 
 integer error=0;
 
@@ -35,7 +35,9 @@ silpa_fpga uut (
 	.spi0_miso (spi_miso),
 	.spi0_cs_n (spi_cs),
 	.slot(output0),
-	.user_led(interrupt)
+	.user_led(interrupt),
+        .user_led_1(led_g),
+        .user_led_2(led_b)
 	//.slot1(output1)
 );
 
@@ -44,7 +46,7 @@ always #(SYS_PERIOD/2) sys_clk = ~sys_clk;
 
 task automatic spi_transaction (input [addr_w-1:0] addr, input [data_w-1:0] data, output [addr_w-1:0] addr_readback, output [data_w-1:0] data_readback);
 	begin
-		spi_cs = 1'b1;
+		spi_cs = 1'b0;
 		for (i = 0; i <= addr_w-1; i = i + 1) begin
 			spi_mosi = addr[addr_w-i-1];
 			#(SPI_PERIOD/2);
@@ -62,7 +64,7 @@ task automatic spi_transaction (input [addr_w-1:0] addr, input [data_w-1:0] data
 			data_readback[data_w-i-1] = spi_miso;
 		end		
 		#(SPI_PERIOD/2);
-		spi_cs = 1'b0;
+		spi_cs = 1'b1;
 		spi_mosi = 1'b0;
 	end
 endtask
@@ -122,24 +124,25 @@ initial begin
   rst = 1'b1;
   spi_clk = 1'b0;
   spi_mosi = 1'b0;
-  spi_cs = 1'b0;
-  output0 = 16'bzzzzzzzzzzzzzzzz;
+  spi_cs = 1'b1;
+  //output0 = 16'bzzzzzzzzzzzzzzzz;
 
   #50 rst = 1'b0;
-  
-  spi_write_and_check(6'h01, 16'haaaa);
-  spi_write_and_check(6'h05, 16'h5555);
-  spi_write_and_check(6'h00, 16'h2a2a);
-  spi_write_and_check(6'h01, 16'hffff);
-  spi_write_and_check(6'h07, 16'h0000);
+  #20 spi_transaction(8'h10, 16'hffff, addr_read, data_read);
+  #20 spi_transaction(8'h00, 16'hffff, addr_read, data_read);
+  //spi_write_and_check(8'h01, 16'haaaa);
+  //spi_write_and_check(6'h05, 16'h5555);
+  //spi_write_and_check(6'h00, 16'h2a2a);
+  //spi_write_and_check(6'h01, 16'hffff);
+  //spi_write_and_check(6'h07, 16'h0000);
 
-  set_direction(3'd0, 1); //output
-  set_output(3'd0, 16'haaaa);
-  set_direction(3'd0, 0); //input
-  #20 output0 = 16'h0000;
-  set_int_mask(3'd0, 16'hffff);
-  #20 output0 = 16'h0001;
-  clear_int(3'd0, 16'hffff);
+  //set_direction(3'd0, 1); //output
+  //set_output(3'd0, 16'haaaa);
+  //set_direction(3'd0, 0); //input
+  //#20 output0 = 16'h0000;
+  //set_int_mask(3'd0, 16'hffff);
+  //#20 output0 = 16'h0001;
+  //clear_int(3'd0, 16'hffff);
   
   
   #40000 if(error==0)

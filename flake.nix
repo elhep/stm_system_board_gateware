@@ -53,7 +53,7 @@
         phases = [ "buildPhase" "installPhase" ];
         src = self;
         buildInputs = [
-         (pkgs.python3.withPackages(f: [ migen microscope litex ]))
+         (pkgs.python3.withPackages(f: [ migen misoc microscope litex ]))
           pkgs.yosys
           pkgs.nextpnr
           pkgs.trellis
@@ -113,7 +113,7 @@
       devShell.x86_64-linux = pkgs.mkShell {
         name = "silpa-hdl-dev-shell";
         buildInputs = [
-         (pkgs.python3.withPackages(f: [ migen microscope litex ]))
+         (pkgs.python3.withPackages(f: [ migen misoc microscope litex ]))
           pkgs.yosys
           pkgs.nextpnr
           pkgs.trellis
