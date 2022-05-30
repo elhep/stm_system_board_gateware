@@ -250,7 +250,7 @@ from math import log2, ceil
 class SR_WB(Module):
     def __init__(self, wb_bus, address_width=7, data_width=16):
         self.wb = wb_bus
-        # 1 bit r/w, 7 bit address, 16 bit data
+        # 1 bit r/~w, 7 bit address, 16 bit data
         self.width = 1 + address_width + data_width
 
         self.sdi = Signal()
@@ -269,34 +269,17 @@ class SR_WB(Module):
               i_D=0, i_CK=ClockSignal("sck1"), i_SP=self.sel, i_PD=~self.sel,
               o_Q=self.cd_le.clk)
 
-        self.sync.sck1 += [
-                If(self.sel,
-                   self.sdo.eq(sr[-1]),
-                    sr[0].eq(self.sdi),
-                    If(self.cd_le.clk,
-                        sr[1:].eq(self.do[:-1])
-                    ).Else(
-                        sr[1:].eq(sr[:-1])
-                    )
-                )
-        ]
-        self.sync.le += [
-            self.di.eq(sr),
-            #write
-            If(self.di[0] == 1,
-                self.wb.adr.eq(self.di[1:1+address_width]),
-                self.wb.dat_w.eq(self.di[1+address_width:]),
-                self.wb.sel.eq(2**len(self.wb.sel) - 1),
-                self.wb.we.eq(1),
-                self.wb.cyc.eq(1),
-                self.wb.stb.eq(1)
-            ).Else(
-                self.wb.we.eq(0),
-                self.wb.cyc.eq(0),
-                self.wb.stb.eq(0)
-            )
-        ]
-
+        # self.sync.sck1 += [
+        #     If(self.sel,
+        #        self.sdo.eq(sr[-1]),
+        #         sr[0].eq(self.sdi),
+        #         If(self.cd_le.clk,
+        #             sr[1:].eq(self.do[:-1])
+        #         ).Else(
+        #             sr[1:].eq(sr[:-1])
+        #         )
+        #     )
+        # ]
         self.counter1 = Signal(ceil(log2(self.width)))
         self.counter1_reset_done = Signal()
         self.counter1_reset = Signal()
@@ -304,11 +287,62 @@ class SR_WB(Module):
             If(self.counter1_reset & ~self.counter1_reset_done,
                self.counter1.eq(0),
                self.counter1_reset_done.eq(1)
-            ).Elif(self.sel,
-               self.counter1.eq(self.counter1 + 1),
-               self.counter1_reset_done.eq(0)
+               ).Elif(self.sel,
+                      self.counter1.eq(self.counter1 + 1),
+                      self.counter1_reset_done.eq(0)
+                      )
+        ]
+
+        read = Signal()
+        write = Signal()
+        self.sync.sck1 += [
+            If(self.sel,
+               # If(self.sdi & (self.counter1 == 0),
+               #      read.eq(1)
+               # ).Elif(~self.sdi & (self.counter1 == 0),
+               #     write.eq(1)
+               # ),
+               If((self.counter1 == address_width+1) & sr[7],
+                  read.eq(1),
+                  self.wb.adr.eq(sr[0:address_width]),
+               ).Elif((self.counter1 == address_width+1) & ~sr[7],
+                   write.eq(1)
+               ).Elif((self.counter1 == self.width) & write,
+                  self.wb.adr.eq(sr[data_width:-1]),
+                  self.wb.dat_w.eq(sr[:data_width]),
+                  self.wb.sel.eq(2 ** len(self.wb.sel) - 1),
+                  self.wb.we.eq(1),
+                  self.wb.cyc.eq(1),
+                  self.wb.stb.eq(1)
+               ),
+
+                sr[0].eq(self.sdi),
+                If(self.cd_le.clk,
+                    sr[1:].eq(self.do[:-1])
+                ).Else(
+                    sr[1:].eq(sr[:-1])
+                )
             )
         ]
+        self.sync.le += [
+            self.di.eq(sr),
+            #write
+            # If(sr[-1],
+            #     self.wb.adr.eq(sr[data_width:-1]),
+            #     self.wb.dat_w.eq(sr[:data_width]),
+            #     self.wb.sel.eq(2**len(self.wb.sel) - 1),
+            #     self.wb.we.eq(1),
+            #     self.wb.cyc.eq(1),
+            #     self.wb.stb.eq(1)
+            # ).Else(
+            #     self.wb.we.eq(0),
+            #     self.wb.cyc.eq(0),
+            #     self.wb.stb.eq(0)
+            # ),
+            # self.counter1_reset.eq(1)
+        ]
+
+
 
 
 class DiotLEC_WB(Module, AutoCSR):
@@ -343,13 +377,16 @@ class DiotLEC_WB(Module, AutoCSR):
 
         self.csr_bus = csr_bus.Interface(data_width=16, address_width=8)
         self.wishbone = wishbone.Interface(data_width=16, adr_width=8)
-        self.buses = wishbone2csr.WB2CSR(bus_wishbone=self.wishbone, bus_csr=self.csr_bus)
+        self.submodules.buses = wishbone2csr.WB2CSR(bus_wishbone=self.wishbone, bus_csr=self.csr_bus)
 
         self.output = CSRStorage(16)
         self.input = CSRStatus(16)
         for i in range(16):
-            self.slot[0][i].o.eq(self.output.storage[i])
-            self.input.status[i].eq(self.slot[0][i].i)
+            self.comb += [
+                self.slot[0][i].o.eq(self.output.storage[i]),
+                self.input.status[i].eq(self.slot[0][i].i),
+                self.slot[0][i].oe.eq(1)
+            ]
         self.csr_devices = ["output", "input"]
 
     # def do_finalize(self):
@@ -364,6 +401,11 @@ class DiotLEC_WB(Module, AutoCSR):
         # self.submodules.csrcon = csr_bus.Interconnect(self.buses.csr, [self.csrs])
 
         self.submodules.spi_slave = SR_WB(self.wishbone)
+        self.comb += [
+            self.spi_slave.sdi.eq(self.mosi),
+            self.spi_slave.sel.eq(self.cs),
+            self.miso.eq(self.spi_slave.sdo)
+        ]
 
     def get_csr_registers(self, name, memory):
         try:

@@ -16,7 +16,7 @@ reg              spi_mosi;
 wire              spi_miso;
 reg              spi_cs;
 
-reg     [data_w-1:0]    output0;
+wire     [data_w-1:0]    output0;
 wire     [data_w-1:0]    output1;
 reg               sys_clk;
 
@@ -128,8 +128,8 @@ initial begin
   //output0 = 16'bzzzzzzzzzzzzzzzz;
 
   #50 rst = 1'b0;
-  #20 spi_transaction(8'h10, 16'hffff, addr_read, data_read);
   #20 spi_transaction(8'h00, 16'hffff, addr_read, data_read);
+  //#20 spi_transaction(8'h00, 16'hffff, addr_read, data_read);
   //spi_write_and_check(8'h01, 16'haaaa);
   //spi_write_and_check(6'h05, 16'h5555);
   //spi_write_and_check(6'h00, 16'h2a2a);
