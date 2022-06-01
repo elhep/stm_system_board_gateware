@@ -3,8 +3,9 @@
 
 module tb_diot_lec();
 	
-parameter SYS_PERIOD = 12;
+parameter SYS_PERIOD = 2;
 parameter SPI_PERIOD = 12;
+parameter DUMMY_CYCLES = 0;
 parameter addr_w = 8;
 parameter data_w = 16;
 	
@@ -55,6 +56,12 @@ task automatic spi_transaction (input [addr_w-1:0] addr, input [data_w-1:0] data
 			spi_clk = 1'b0;
 			addr_readback[addr_w-i-1] = spi_miso;
 		end
+		for (i = 0; i < DUMMY_CYCLES; i = i + 1) begin
+			#(SPI_PERIOD/2);
+			spi_clk = 1'b1;
+			#(SPI_PERIOD/2);
+			spi_clk = 1'b0;
+		end
 		for (i = 0; i <= data_w-1; i = i + 1) begin
 			spi_mosi = data[data_w-i-1];
 			#(SPI_PERIOD/2);
@@ -63,9 +70,16 @@ task automatic spi_transaction (input [addr_w-1:0] addr, input [data_w-1:0] data
 			spi_clk = 1'b0;
 			data_readback[data_w-i-1] = spi_miso;
 		end		
+		for (i = 0; i < 10; i = i + 1) begin
+			#(SPI_PERIOD/2);
+			spi_clk = 1'b1;
+			#(SPI_PERIOD/2);
+			spi_clk = 1'b0;
+		end
 		#(SPI_PERIOD/2);
 		spi_cs = 1'b1;
 		spi_mosi = 1'b0;
+		
 	end
 endtask
 

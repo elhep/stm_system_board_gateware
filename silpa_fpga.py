@@ -260,6 +260,9 @@ class SR_WB(Module):
         self.di = Signal(self.width)
         self.do = Signal(self.width)
 
+        self.wb_local = wishbone.Interface.like(wb_bus)
+        self.wb_local = self.wb
+
         # # #
 
         sr = Signal(self.width)
@@ -269,17 +272,27 @@ class SR_WB(Module):
               i_D=0, i_CK=ClockSignal("sck1"), i_SP=self.sel, i_PD=~self.sel,
               o_Q=self.cd_le.clk)
 
-        # self.sync.sck1 += [
-        #     If(self.sel,
-        #        self.sdo.eq(sr[-1]),
-        #         sr[0].eq(self.sdi),
-        #         If(self.cd_le.clk,
-        #             sr[1:].eq(self.do[:-1])
-        #         ).Else(
-        #             sr[1:].eq(sr[:-1])
-        #         )
-        #     )
-        # ]
+        for sig in ["ack", "err"]:
+            ps = PulseSynchronizer(idomain="sys", odomain="sck1")
+            self.submodules += ps
+            self.comb += [ps.i.eq(getattr(self.wb, sig)), getattr(self.wb_local, sig).eq(ps.o)]
+
+        for sig in ["we", "cyc", "stb"]:
+            ps = PulseSynchronizer(idomain="sck1", odomain="sys")
+            self.submodules += ps
+            self.comb += [ps.i.eq(getattr(self.wb_local, sig)), getattr(self.wb, sig).eq(ps.o)]
+
+        for bus in ["adr", "dat_w", "sel"]:
+            bs = BusSynchronizer(len(getattr(self.wb, bus)), idomain="sck1", odomain="sys")
+            self.submodules += bs
+            self.comb += [bs.i.eq(getattr(self.wb_local, bus)), getattr(self.wb, bus).eq(bs.o)]
+
+        for bus in ["dat_r"]:
+            bs = BusSynchronizer(len(getattr(self.wb, bus)), idomain="sys", odomain="sck1")
+            self.submodules += bs
+            self.comb += [bs.i.eq(getattr(self.wb, bus)), getattr(self.wb_local, bus).eq(bs.o)]
+
+
         self.counter1 = Signal(ceil(log2(self.width)))
         self.counter1_reset_done = Signal()
         self.counter1_reset = Signal()
@@ -297,23 +310,26 @@ class SR_WB(Module):
         write = Signal()
         self.sync.sck1 += [
             If(self.sel,
-               # If(self.sdi & (self.counter1 == 0),
-               #      read.eq(1)
-               # ).Elif(~self.sdi & (self.counter1 == 0),
-               #     write.eq(1)
-               # ),
-               If((self.counter1 == address_width+1) & sr[7],
+               If(self.wb_local.ack,
+                   self.wb_local.cyc.eq(0),
+                   self.wb_local.stb.eq(0),
+                   self.wb_local.we.eq(0),
+                ),
+               If((self.counter1 == address_width + 1) & sr[7],
                   read.eq(1),
-                  self.wb.adr.eq(sr[0:address_width]),
+                  self.wb_local.adr.eq(sr[0:address_width]),
+                  self.wb_local.we.eq(0),
+                  self.wb_local.stb.eq(1),
+                  self.wb_local.cyc.eq(1),
                ).Elif((self.counter1 == address_width+1) & ~sr[7],
                    write.eq(1)
                ).Elif((self.counter1 == self.width) & write,
-                  self.wb.adr.eq(sr[data_width:-1]),
-                  self.wb.dat_w.eq(sr[:data_width]),
-                  self.wb.sel.eq(2 ** len(self.wb.sel) - 1),
-                  self.wb.we.eq(1),
-                  self.wb.cyc.eq(1),
-                  self.wb.stb.eq(1)
+                  self.wb_local.adr.eq(sr[data_width:-1]),
+                  self.wb_local.dat_w.eq(sr[:data_width]),
+                  self.wb_local.sel.eq(2 ** len(self.wb_local.sel) - 1),
+                  self.wb_local.we.eq(1),
+                  self.wb_local.cyc.eq(1),
+                  self.wb_local.stb.eq(1)
                ),
 
                 sr[0].eq(self.sdi),
@@ -326,20 +342,10 @@ class SR_WB(Module):
         ]
         self.sync.le += [
             self.di.eq(sr),
-            #write
-            # If(sr[-1],
-            #     self.wb.adr.eq(sr[data_width:-1]),
-            #     self.wb.dat_w.eq(sr[:data_width]),
-            #     self.wb.sel.eq(2**len(self.wb.sel) - 1),
-            #     self.wb.we.eq(1),
-            #     self.wb.cyc.eq(1),
-            #     self.wb.stb.eq(1)
-            # ).Else(
-            #     self.wb.we.eq(0),
-            #     self.wb.cyc.eq(0),
-            #     self.wb.stb.eq(0)
-            # ),
-            # self.counter1_reset.eq(1)
+        ]
+
+        self.sync.sys += [
+
         ]
 
 
@@ -367,9 +373,7 @@ class DiotLEC_WB(Module, AutoCSR):
         self.clock_domains.cd_sys = ClockDomain("sys")
         self.clock_domains.cd_sck0 = ClockDomain("sck0", reset_less=True)
         self.clock_domains.cd_sck1 = ClockDomain("sck1", reset_less=True)
-        # self.specials += [
-        #     Instance("BUFG", i_I=self.spi_clk, o_O=self.cd_sck1.clk),
-        # ]
+
         self.comb += [
             self.cd_sck0.clk.eq(~self.cd_sck1.clk),
             self.cd_sck1.clk.eq(self.spi_clk)
