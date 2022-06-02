@@ -1,6 +1,6 @@
 from migen import *
 from migen.genlib.coding import Decoder
-from migen.genlib.cdc import PulseSynchronizer, BusSynchronizer
+from migen.genlib.cdc import PulseSynchronizer, BusSynchronizer, MultiReg
 from misoc.interconnect.csr import *
 from misoc.interconnect import wishbone, csr_bus, wishbone2csr
 from misoc.integration.wb_slaves import WishboneSlaveManager
@@ -295,12 +295,8 @@ class SR_WB(Module):
         ps = PulseSynchronizer(idomain="sck1", odomain="sys")
         self.submodules += ps
         self.comb += [ps.i.eq(read_data_valid_ack_sck), read_data_valid_ack_wb.eq(ps.o)]
-        bs = BusSynchronizer(len(read_data_sck), idomain="sys", odomain="sck1")
-        self.submodules += bs
-        self.comb += [bs.i.eq(read_data_wb), read_data_sck.eq(bs.o)]
-        bs = BusSynchronizer(2, idomain="sys", odomain="sck1")  # BS has different implementation for width=1
-        self.submodules += bs
-        self.comb += [bs.i.eq(read_data_valid_wb), read_data_valid_sck.eq(bs.o)]
+        self.specials += MultiReg(read_data_wb, read_data_sck, odomain="sck1")
+        self.specials += MultiReg(read_data_valid_wb, read_data_valid_sck, odomain="sck1")
         
         self.sync.sck1 += [
            read_sck.eq(0),
@@ -401,7 +397,6 @@ class DiotLEC_WB(Module, AutoCSR):
                 self.slot[0][i].oe.eq(self.oe.storage[i])
             ]
 
-        print(self.get_csrs())
         self.submodules.csrs = csr_bus.CSRBank(self.get_csrs(), address=0, bus=self.csr_bus, align_bits=4)
 
         self.submodules.spi_slave = SR_WB(self.wishbone)
@@ -483,7 +478,7 @@ if __name__ == "__main__":
     silpa_fpga = SilpaFPGA(platform)
 
     from migen.fhdl.specials import Tristate
-    sim = True
+    sim = False
     so = {}
     if sim:
         so = {Tristate: LatticeECP5TrellisTristateDiamond}
