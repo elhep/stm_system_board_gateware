@@ -260,9 +260,6 @@ class SR_WB(Module):
         self.di = Signal(self.width)
         self.do = Signal(self.width)
 
-        self.wb_local = wishbone.Interface.like(wb_bus)
-        self.wb_local = self.wb
-
         # # #
 
         sr = Signal(self.width)
@@ -271,66 +268,54 @@ class SR_WB(Module):
         self.specials += Instance("FD1P3BX",
               i_D=0, i_CK=ClockSignal("sck1"), i_SP=self.sel, i_PD=~self.sel,
               o_Q=self.cd_le.clk)
-
-        for sig in ["ack", "err"]:
-            ps = PulseSynchronizer(idomain="sys", odomain="sck1")
-            self.submodules += ps
-            self.comb += [ps.i.eq(getattr(self.wb, sig)), getattr(self.wb_local, sig).eq(ps.o)]
-
-        for sig in ["we", "cyc", "stb"]:
-            ps = PulseSynchronizer(idomain="sck1", odomain="sys")
-            self.submodules += ps
-            self.comb += [ps.i.eq(getattr(self.wb_local, sig)), getattr(self.wb, sig).eq(ps.o)]
-
-        for bus in ["adr", "dat_w", "sel"]:
-            bs = BusSynchronizer(len(getattr(self.wb, bus)), idomain="sck1", odomain="sys")
-            self.submodules += bs
-            self.comb += [bs.i.eq(getattr(self.wb_local, bus)), getattr(self.wb, bus).eq(bs.o)]
-
-        for bus in ["dat_r"]:
-            bs = BusSynchronizer(len(getattr(self.wb, bus)), idomain="sys", odomain="sck1")
-            self.submodules += bs
-            self.comb += [bs.i.eq(getattr(self.wb, bus)), getattr(self.wb_local, bus).eq(bs.o)]
-
+        self.clock_domains.cd_le_n = ClockDomain("le_n", reset_less=True)
+        self.comb += [self.cd_le_n.clk.eq(~self.cd_le.clk)]
 
         self.counter1 = Signal(ceil(log2(self.width)))
         self.counter1_reset_done = Signal()
         self.counter1_reset = Signal()
         self.sync.sck1 += [
-            If(self.counter1_reset & ~self.counter1_reset_done,
-               self.counter1.eq(0),
-               self.counter1_reset_done.eq(1)
-               ).Elif(self.sel,
-                      self.counter1.eq(self.counter1 + 1),
-                      self.counter1_reset_done.eq(0)
-                      )
+            # If(self.counter1_reset & ~self.counter1_reset_done,
+            #    self.counter1.eq(0),
+            #    self.counter1_reset_done.eq(1)
+            # ).Elif(self.sel,
+            If(self.sel,
+              self.counter1.eq(self.counter1 + 1),
+              # self.counter1_reset_done.eq(0)
+            )
         ]
 
-        read = Signal()
-        write = Signal()
+        read_sck = Signal()
+        read_wb = Signal()
+        # write_sck = Signal()
+        # write_wb = Signal()
+        # sr_wb = Signal.like(sr)
+        spi_trans_done = Signal()
+
+        ps = PulseSynchronizer(idomain="sck1", odomain="sys")
+        self.submodules += ps
+        self.comb += [ps.i.eq(read_sck), read_wb.eq(ps.o)]
+        # ps = PulseSynchronizer(idomain="sck1", odomain="sys")
+        # self.submodules += ps
+        # self.comb += [ps.i.eq(write_sck), write_wb.eq(ps.o)]
+        # bs = BusSynchronizer(len(sr), idomain="sck1", odomain="sys")
+        # self.submodules += bs
+        # self.comb += [bs.i.eq(sr), sr_wb.eq(bs.o)]
+        
         self.sync.sck1 += [
+           read_sck.eq(0),
+           # write_sck.eq(0),
             If(self.sel,
-               If(self.wb_local.ack,
-                   self.wb_local.cyc.eq(0),
-                   self.wb_local.stb.eq(0),
-                   self.wb_local.we.eq(0),
-                ),
+               # If(self.counter1_reset_done,
+               #    self.counter1_reset.eq(0),
+               #  ),
                If((self.counter1 == address_width + 1) & sr[7],
-                  read.eq(1),
-                  self.wb_local.adr.eq(sr[0:address_width]),
-                  self.wb_local.we.eq(0),
-                  self.wb_local.stb.eq(1),
-                  self.wb_local.cyc.eq(1),
-               ).Elif((self.counter1 == address_width+1) & ~sr[7],
-                   write.eq(1)
-               ).Elif((self.counter1 == self.width) & write,
-                  self.wb_local.adr.eq(sr[data_width:-1]),
-                  self.wb_local.dat_w.eq(sr[:data_width]),
-                  self.wb_local.sel.eq(2 ** len(self.wb_local.sel) - 1),
-                  self.wb_local.we.eq(1),
-                  self.wb_local.cyc.eq(1),
-                  self.wb_local.stb.eq(1)
+                  read_sck.eq(1),
                ),
+               # .Elif((self.counter1 == self.width) & ~sr[-1],
+                  # write_sck.eq(1),
+                  # self.counter1_reset.eq(1),
+               # ),
 
                 sr[0].eq(self.sdi),
                 If(self.cd_le.clk,
@@ -340,15 +325,37 @@ class SR_WB(Module):
                 )
             )
         ]
+
         self.sync.le += [
             self.di.eq(sr),
+            spi_trans_done.eq(1),
+            # self.counter1_reset.eq(1),
+            self.counter1.eq(0),
         ]
+        # self.sync.le_n += [
+        #     self.counter1_reset.eq(0),
+        # ]
 
         self.sync.sys += [
-
+            If(self.wb.ack,
+               self.wb.cyc.eq(0),
+               self.wb.stb.eq(0),
+               self.wb.we.eq(0),
+            # ).Elif(read_wb,
+            #    self.wb.adr.eq(sr_wb[0:address_width]),
+            #    self.wb.we.eq(0),
+            #    self.wb.stb.eq(1),
+            #    self.wb.cyc.eq(1),
+            ).Elif(~self.di[-1] & spi_trans_done,
+               self.wb.adr.eq(self.di[data_width:-1]),
+               self.wb.dat_w.eq(self.di[:data_width]),
+               self.wb.sel.eq(2 ** len(self.wb.sel) - 1),
+               self.wb.we.eq(1),
+               self.wb.cyc.eq(1),
+               self.wb.stb.eq(1),
+               spi_trans_done.eq(0)
+            )
         ]
-
-
 
 
 class DiotLEC_WB(Module, AutoCSR):
@@ -391,18 +398,9 @@ class DiotLEC_WB(Module, AutoCSR):
                 self.input.status[i].eq(self.slot[0][i].i),
                 self.slot[0][i].oe.eq(1)
             ]
-        self.csr_devices = ["output", "input"]
 
-    # def do_finalize(self):
         print(self.get_csrs())
-        # for name, obj in util.misc.xdir(self, True):
-        #     print(name, obj)
-        # self.submodules.csrbankarray = csr_bus.CSRBankArray(self, self.get_csr_registers, align_bits=0, data_width=16, address_width=8)
-        # print(self.csrbankarray.submodules.rmap)
-        # print(self.csrbankarray.banks)
-        # self.submodules.csrcon = csr_bus.Interconnect(self.buses.csr, self.csrbankarray.get_buses())
         self.submodules.csrs = csr_bus.CSRBank(self.get_csrs(), address=0, bus=self.csr_bus, align_bits=4)
-        # self.submodules.csrcon = csr_bus.Interconnect(self.buses.csr, [self.csrs])
 
         self.submodules.spi_slave = SR_WB(self.wishbone)
         self.comb += [
@@ -411,22 +409,12 @@ class DiotLEC_WB(Module, AutoCSR):
             self.miso.eq(self.spi_slave.sdo)
         ]
 
-    def get_csr_registers(self, name, memory):
-        try:
-            print(self.csr_devices.index(name))
-            return self.csr_devices.index(name)
-        except ValueError:
-            return None
-
-
-
-
 
 class SilpaFPGA(Module):
     def __init__(self, platform):
         self.reset = Signal()
-        self.specials += Instance("GSR", i_GSR=~ResetSignal() & self.reset, name="GSR_INST")
-        self.specials += Instance("PUR", i_PUR=~ResetSignal(), name="PUR_INST")
+        # self.specials += Instance("GSR", i_GSR=~ResetSignal() & self.reset, name="GSR_INST")
+        # self.specials += Instance("PUR", i_PUR=~ResetSignal(), name="PUR_INST")
 
         self.clock_domains.cd_sys = ClockDomain("sys")
 
