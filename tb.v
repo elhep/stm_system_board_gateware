@@ -3,7 +3,7 @@
 
 module tb_diot_lec();
 	
-parameter SYS_PERIOD = 4;
+parameter SYS_PERIOD = 8;
 parameter SPI_PERIOD = 12;
 parameter DUMMY_CYCLES = 6;
 parameter addr_w = 8;
@@ -17,7 +17,7 @@ reg              spi_mosi;
 wire              spi_miso;
 reg              spi_cs;
 
-reg     [data_w-1:0]    output0;
+wire     [data_w-1:0]    output0;
 wire     [data_w-1:0]    output1;
 reg               sys_clk;
 
@@ -143,15 +143,16 @@ initial begin
 
   #50 rst = 1'b0;
   #7;
-  //#20 spi_transaction(8'h00, 16'hffff, addr_read, data_read);
-  //#20 spi_transaction(8'h02, 16'hffff, addr_read, data_read);
-  //#20 spi_transaction(8'h00, 16'h0000, addr_read, data_read);
-  //#20 spi_transaction(8'h02, 16'h0000, addr_read, data_read);
-  //#20 spi_transaction(8'h02, 16'hffff, addr_read, data_read);
-  #20 output0 = 16'h5555;
-  //#20 spi_transaction(8'h00, 16'haaaa, addr_read, data_read);
+  #20 spi_transaction(8'h00, 16'hffff, addr_read, data_read);
+  #20 spi_transaction(8'h02, 16'hffff, addr_read, data_read);
+  #20 spi_transaction(8'h00, 16'h0000, addr_read, data_read);
+  #20 spi_transaction(8'h02, 16'h0000, addr_read, data_read);
+  #20 spi_transaction(8'h02, 16'hffff, addr_read, data_read);
+  //#20 output0 = 16'h5555;
+  #20 spi_transaction(8'h00, 16'haaaa, addr_read, data_read);
   #20 spi_transaction(8'h81, 16'h0000, addr_read, data_read);
-  #20 output0 = 16'haaaa;
+  #20 spi_transaction(8'h00, 16'h5555, addr_read, data_read);
+  //#20 output0 = 16'haaaa;
   #20 spi_transaction(8'h81, 16'h0000, addr_read, data_read);
   //#20 spi_transaction(8'h00, 16'hffff, addr_read, data_read);
   //spi_write_and_check(8'h01, 16'haaaa);

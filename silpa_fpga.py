@@ -247,7 +247,7 @@ import misoc.interconnect
 from math import log2, ceil
 
 
-class SR_WB(Module):
+class SPI2WB(Module):
     def __init__(self, wb_bus, address_width=7, data_width=16):
         self.wb = wb_bus
         # 1 bit r/~w, 7 bit address, 16 bit data
@@ -258,9 +258,6 @@ class SR_WB(Module):
         self.sel = Signal()
 
         self.di = Signal(self.width)
-
-        # # #
-
         sr = Signal(self.width)
 
         self.clock_domains.cd_le = ClockDomain("le", reset_less=True)
@@ -345,7 +342,7 @@ class SR_WB(Module):
                self.wb.we.eq(0),
                self.wb.stb.eq(1),
                self.wb.cyc.eq(1),
-            ).Elif(~self.di[-1] & spi_trans_done & ~read_data_done,
+            ).Elif(spi_trans_done & ~read_data_done,
                self.wb.adr.eq(read_addr),
                self.wb.dat_w.eq(self.di[:data_width]),
                self.wb.sel.eq(2 ** len(self.wb.sel) - 1),
@@ -399,7 +396,7 @@ class DiotLEC_WB(Module, AutoCSR):
 
         self.submodules.csrs = csr_bus.CSRBank(self.get_csrs(), address=0, bus=self.csr_bus, align_bits=4)
 
-        self.submodules.spi_slave = SR_WB(self.wishbone)
+        self.submodules.spi_slave = SPI2WB(self.wishbone)
         self.comb += [
             self.spi_slave.sdi.eq(self.mosi),
             self.spi_slave.sel.eq(self.cs),
@@ -478,7 +475,7 @@ if __name__ == "__main__":
     silpa_fpga = SilpaFPGA(platform)
 
     from migen.fhdl.specials import Tristate
-    sim = False
+    sim = True
     so = {}
     if sim:
         so = {Tristate: LatticeECP5TrellisTristateDiamond}
