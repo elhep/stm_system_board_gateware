@@ -258,7 +258,6 @@ class SR_WB(Module):
         self.sel = Signal()
 
         self.di = Signal(self.width)
-        self.do = Signal(self.width)
 
         # # #
 
@@ -272,82 +271,86 @@ class SR_WB(Module):
         self.comb += [self.cd_le_n.clk.eq(~self.cd_le.clk)]
 
         self.counter1 = Signal(ceil(log2(self.width)))
-        self.counter1_reset_done = Signal()
-        self.counter1_reset = Signal()
         self.sync.sck1 += [
-            # If(self.counter1_reset & ~self.counter1_reset_done,
-            #    self.counter1.eq(0),
-            #    self.counter1_reset_done.eq(1)
-            # ).Elif(self.sel,
             If(self.sel,
               self.counter1.eq(self.counter1 + 1),
-              # self.counter1_reset_done.eq(0)
             )
         ]
 
         read_sck = Signal()
         read_wb = Signal()
-        # write_sck = Signal()
-        # write_wb = Signal()
-        # sr_wb = Signal.like(sr)
+        read_addr = Signal(address_width)
+        read_data_sck = Signal(data_width)
+        read_data_wb = Signal(data_width)
+        read_data_valid_sck = Signal()
+        read_data_valid_wb = Signal()
+        read_data_valid_ack_sck = Signal()
+        read_data_valid_ack_wb = Signal()
+        read_data_done = Signal()
         spi_trans_done = Signal()
 
         ps = PulseSynchronizer(idomain="sck1", odomain="sys")
         self.submodules += ps
         self.comb += [ps.i.eq(read_sck), read_wb.eq(ps.o)]
-        # ps = PulseSynchronizer(idomain="sck1", odomain="sys")
-        # self.submodules += ps
-        # self.comb += [ps.i.eq(write_sck), write_wb.eq(ps.o)]
-        # bs = BusSynchronizer(len(sr), idomain="sck1", odomain="sys")
-        # self.submodules += bs
-        # self.comb += [bs.i.eq(sr), sr_wb.eq(bs.o)]
+        ps = PulseSynchronizer(idomain="sck1", odomain="sys")
+        self.submodules += ps
+        self.comb += [ps.i.eq(read_data_valid_ack_sck), read_data_valid_ack_wb.eq(ps.o)]
+        bs = BusSynchronizer(len(read_data_sck), idomain="sys", odomain="sck1")
+        self.submodules += bs
+        self.comb += [bs.i.eq(read_data_wb), read_data_sck.eq(bs.o)]
+        bs = BusSynchronizer(2, idomain="sys", odomain="sck1")  # BS has different implementation for width=1
+        self.submodules += bs
+        self.comb += [bs.i.eq(read_data_valid_wb), read_data_valid_sck.eq(bs.o)]
         
         self.sync.sck1 += [
            read_sck.eq(0),
-           # write_sck.eq(0),
+           read_data_valid_ack_sck.eq(0),
             If(self.sel,
-               # If(self.counter1_reset_done,
-               #    self.counter1_reset.eq(0),
-               #  ),
-               If((self.counter1 == address_width + 1) & sr[7],
-                  read_sck.eq(1),
+               If(self.counter1 == address_width + 1,
+                  If(sr[7],
+                     read_sck.eq(1),
+                  ),
+                  read_addr.eq(sr[0:address_width])
                ),
-               # .Elif((self.counter1 == self.width) & ~sr[-1],
-                  # write_sck.eq(1),
-                  # self.counter1_reset.eq(1),
-               # ),
-
-                sr[0].eq(self.sdi),
-                If(self.cd_le.clk,
-                    sr[1:].eq(self.do[:-1])
-                ).Else(
-                    sr[1:].eq(sr[:-1])
-                )
+               If(read_data_valid_sck & ~read_data_done,
+                  read_data_valid_ack_sck.eq(1),
+                  read_data_done.eq(1),
+                  self.sdo.eq(read_data_sck[-1]),
+                  sr[address_width+2:].eq(read_data_sck[:-1])
+               ).Else(
+                  self.sdo.eq(sr[-1]),
+                  sr[0].eq(self.sdi),
+                  sr[1:].eq(sr[:-1])
+               )
             )
         ]
 
         self.sync.le += [
             self.di.eq(sr),
             spi_trans_done.eq(1),
-            # self.counter1_reset.eq(1),
+            read_data_done.eq(0),
             self.counter1.eq(0),
         ]
-        # self.sync.le_n += [
-        #     self.counter1_reset.eq(0),
-        # ]
 
         self.sync.sys += [
+            If(read_data_valid_ack_wb,
+                read_data_valid_wb.eq(0),
+            ),
             If(self.wb.ack,
                self.wb.cyc.eq(0),
                self.wb.stb.eq(0),
                self.wb.we.eq(0),
-            # ).Elif(read_wb,
-            #    self.wb.adr.eq(sr_wb[0:address_width]),
-            #    self.wb.we.eq(0),
-            #    self.wb.stb.eq(1),
-            #    self.wb.cyc.eq(1),
-            ).Elif(~self.di[-1] & spi_trans_done,
-               self.wb.adr.eq(self.di[data_width:-1]),
+               If(~self.wb.we,
+                  read_data_wb.eq(self.wb.dat_r),
+                  read_data_valid_wb.eq(1)
+               )
+            ).Elif(read_wb,
+               self.wb.adr.eq(read_addr),
+               self.wb.we.eq(0),
+               self.wb.stb.eq(1),
+               self.wb.cyc.eq(1),
+            ).Elif(~self.di[-1] & spi_trans_done & ~read_data_done,
+               self.wb.adr.eq(read_addr),
                self.wb.dat_w.eq(self.di[:data_width]),
                self.wb.sel.eq(2 ** len(self.wb.sel) - 1),
                self.wb.we.eq(1),
@@ -360,8 +363,6 @@ class SR_WB(Module):
 
 class DiotLEC_WB(Module, AutoCSR):
     def __init__(self, address_reg_len=8, slots=8):
-        self.specials += Instance("GSR", i_GSR=~ResetSignal(), name="GSR_INST")
-        self.specials += Instance("PUR", i_PUR=~ResetSignal(), name="PUR_INST")
 
         self.address_reg_len = address_reg_len
         self.slots_num = slots
@@ -392,11 +393,12 @@ class DiotLEC_WB(Module, AutoCSR):
 
         self.output = CSRStorage(16)
         self.input = CSRStatus(16)
+        self.oe = CSRStorage(16)
         for i in range(16):
             self.comb += [
                 self.slot[0][i].o.eq(self.output.storage[i]),
                 self.input.status[i].eq(self.slot[0][i].i),
-                self.slot[0][i].oe.eq(1)
+                self.slot[0][i].oe.eq(self.oe.storage[i])
             ]
 
         print(self.get_csrs())
@@ -413,8 +415,8 @@ class DiotLEC_WB(Module, AutoCSR):
 class SilpaFPGA(Module):
     def __init__(self, platform):
         self.reset = Signal()
-        # self.specials += Instance("GSR", i_GSR=~ResetSignal() & self.reset, name="GSR_INST")
-        # self.specials += Instance("PUR", i_PUR=~ResetSignal(), name="PUR_INST")
+        self.specials += Instance("GSR", i_GSR=~ResetSignal() & self.reset, name="GSR_INST")
+        self.specials += Instance("PUR", i_PUR=~ResetSignal(), name="PUR_INST")
 
         self.clock_domains.cd_sys = ClockDomain("sys")
 
