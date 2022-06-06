@@ -244,6 +244,7 @@ class DiotLEC_Simple(Module):
 
 from misoc.interconnect.csr import CSRStatus, CSRStorage, AutoCSR
 import misoc.interconnect
+from misoc.cores.spi2 import SPIMaster, SPIInterface
 from math import log2, ceil
 
 
@@ -355,7 +356,7 @@ class SPI2WB(Module):
 
 
 class DiotLEC_WB(Module, AutoCSR):
-    def __init__(self, address_reg_len=8, slots=8):
+    def __init__(self, spi_pads, address_reg_len=8, slots=8):
 
         self.address_reg_len = address_reg_len
         self.slots_num = slots
@@ -384,6 +385,7 @@ class DiotLEC_WB(Module, AutoCSR):
         self.wishbone = wishbone.Interface(data_width=16, adr_width=8)
         self.submodules.buses = wishbone2csr.WB2CSR(bus_wishbone=self.wishbone, bus_csr=self.csr_bus)
 
+        self.output = []
         self.output = CSRStorage(16)
         self.input = CSRStatus(16)
         self.oe = CSRStorage(16)
@@ -394,6 +396,11 @@ class DiotLEC_WB(Module, AutoCSR):
                 self.slot[0][i].oe.eq(self.oe.storage[i])
             ]
 
+        spi_interface = SPIInterface(spi_pads)
+        self.spi_master = SPIMaster(spi_interface, data_width=16, div_width=8)
+        self.submodules += self.spi_master
+        print("# of registers:", len(self.get_csrs()))
+        assert len(self.get_csrs()) < 2**(address_reg_len-1)
         self.submodules.csrs = csr_bus.CSRBank(self.get_csrs(), address=0, bus=self.csr_bus, align_bits=4)
 
         self.submodules.spi_slave = SPI2WB(self.wishbone)
@@ -413,7 +420,8 @@ class SilpaFPGA(Module):
         self.clock_domains.cd_sys = ClockDomain("sys")
 
         # self.logic = DiotLEC_Simple(address_reg_len=8, slots=8)
-        self.logic = DiotLEC_WB(address_reg_len=8, slots=1)
+        spi_output_pads = platform.request("spisdcard")
+        self.logic = DiotLEC_WB(spi_pads=spi_output_pads, address_reg_len=8, slots=1)
         self.submodules += self.logic
 
         for slot in [self.logic.slot[0]]:

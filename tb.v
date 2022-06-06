@@ -5,7 +5,7 @@ module tb_diot_lec();
 	
 parameter SYS_PERIOD = 8;
 parameter SPI_PERIOD = 12;
-parameter DUMMY_CYCLES = 6;
+parameter DUMMY_CYCLES = 8;
 parameter addr_w = 8;
 parameter data_w = 16;
 	
@@ -16,6 +16,8 @@ reg              spi_clk;
 reg              spi_mosi;
 wire              spi_miso;
 reg              spi_cs;
+wire spisdcard_clk, spisdcard_mosi, spisdcard_cs_n;
+reg spisdcard_miso;
 
 wire     [data_w-1:0]    output0;
 wire     [data_w-1:0]    output1;
@@ -38,7 +40,11 @@ silpa_fpga uut (
 	.slot(output0),
 	.user_led(interrupt),
         .user_led_1(led_g),
-        .user_led_2(led_b)
+        .user_led_2(led_b),
+	.spisdcard_clk(spisdcard_clk),
+	.spisdcard_mosi(spisdcard_mosi),
+	.spisdcard_cs_n(spisdcard_cs_n),
+	.spisdcard_miso(spisdcard_miso)
 	//.slot1(output1)
 );
 
@@ -86,11 +92,7 @@ endtask
 task automatic spi_write_and_check(input [addr_w-1:0] addr, input [data_w-1:0] data);
 	begin
 		#20 spi_transaction(addr, data, addr_read, data_read);
-		#20 spi_transaction(addr, 16'h0000, addr_read, data_read);
-		if(addr_read != addr) begin
-			$error("Invalid address read back, expected 0x%0h, seen: 0x%0h.", addr, addr_read);
-			error = 1;
-		end
+		#20 spi_transaction(addr | 8'h80, 16'h0000, addr_read, data_read);
 		if(data_read != data) $error("Invalid data read back, expected 0x%0h, seen: 0x%0h.", data, data_read);
 	end
 endtask
@@ -124,6 +126,31 @@ task automatic clear_int(input [2:0] slot, input [data_w-1:0] data);
 		#20 spi_transaction(slot+40, data, addr_read, data_read);
 	end
 endtask
+integer offset=3;
+task automatic configure_spi_machine(input [2:0] slot);
+	begin
+		//length = 16 bit -1
+		#20 spi_transaction(offset+1, 8'hf, addr_read, data_read);
+		//active chip selects
+		#20 spi_transaction(offset+2, 1'b1, addr_read, data_read);
+		//cs_polarity
+		#20 spi_transaction(offset+3, 1'b0, addr_read, data_read);
+		//clk dif
+		#20 spi_transaction(offset+4, 8'h4, addr_read, data_read);
+		//offline
+		#20 spi_transaction(offset+5, 1'b0, addr_read, data_read);
+		//clk polarity
+		#20 spi_transaction(offset+6, 1'b0, addr_read, data_read);
+		//clk phase
+		//#20 spi_transaction(offset+7, 1'b0, addr_read, data_read);
+		//lsb_first
+		#20 spi_transaction(offset+8, 1'b0, addr_read, data_read);
+		//half duplex
+		#20 spi_transaction(offset+9, 1'b0, addr_read, data_read);
+		//end
+		#20 spi_transaction(offset+10, 1'b1, addr_read, data_read);
+	end
+endtask
 
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -139,27 +166,32 @@ initial begin
   spi_clk = 1'b0;
   spi_mosi = 1'b0;
   spi_cs = 1'b1;
+  spisdcard_miso = 1'b0;
   //output0 = 16'bzzzzzzzzzzzzzzzz;
 
   #50 rst = 1'b0;
   #7;
-  #20 spi_transaction(8'h00, 16'hffff, addr_read, data_read);
-  #20 spi_transaction(8'h02, 16'hffff, addr_read, data_read);
-  #20 spi_transaction(8'h00, 16'h0000, addr_read, data_read);
-  #20 spi_transaction(8'h02, 16'h0000, addr_read, data_read);
-  #20 spi_transaction(8'h02, 16'hffff, addr_read, data_read);
-  //#20 output0 = 16'h5555;
-  #20 spi_transaction(8'h00, 16'haaaa, addr_read, data_read);
-  #20 spi_transaction(8'h81, 16'h0000, addr_read, data_read);
-  #20 spi_transaction(8'h00, 16'h5555, addr_read, data_read);
-  //#20 output0 = 16'haaaa;
-  #20 spi_transaction(8'h81, 16'h0000, addr_read, data_read);
   //#20 spi_transaction(8'h00, 16'hffff, addr_read, data_read);
-  //spi_write_and_check(8'h01, 16'haaaa);
-  //spi_write_and_check(6'h05, 16'h5555);
-  //spi_write_and_check(6'h00, 16'h2a2a);
-  //spi_write_and_check(6'h01, 16'hffff);
-  //spi_write_and_check(6'h07, 16'h0000);
+  //#20 spi_transaction(8'h02, 16'hffff, addr_read, data_read);
+  //#20 spi_transaction(8'h00, 16'h0000, addr_read, data_read);
+  //#20 spi_transaction(8'h02, 16'h0000, addr_read, data_read);
+  //#20 spi_transaction(8'h02, 16'hffff, addr_read, data_read);
+  //#20 output0 = 16'h5555;
+  //#20 spi_transaction(8'h00, 16'haaaa, addr_read, data_read);
+  //#20 spi_transaction(8'h81, 16'h0000, addr_read, data_read);
+  //#20 spi_transaction(8'h00, 16'h5555, addr_read, data_read);
+  //#20 output0 = 16'haaaa;
+  //#20 spi_transaction(8'h81, 16'h0000, addr_read, data_read);
+  //#20 spi_transaction(8'h00, 16'hffff, addr_read, data_read);
+  //sanity check for reads
+  spi_write_and_check(8'h00, 16'haaaa);
+  spi_write_and_check(6'h00, 16'h5555);
+  spi_write_and_check(6'h00, 16'h0000);
+  spi_write_and_check(6'h00, 16'h0001);
+  spi_write_and_check(6'h00, 16'h8000);
+  spi_write_and_check(6'h00, 16'hffff);
+  spi_write_and_check(6'h00, 16'h2a2a);
+  
 
   //set_direction(3'd0, 1); //output
   //set_output(3'd0, 16'haaaa);
@@ -168,7 +200,16 @@ initial begin
   //set_int_mask(3'd0, 16'hffff);
   //#20 output0 = 16'h0001;
   //clear_int(3'd0, 16'hffff);
+  #20 configure_spi_machine(0);
+  #100
+  //read idle
+  #20 spi_transaction(offset+13 | 8'h80, 16'h00, addr_read, data_read);
+  if(data_read != 16'h01) $error("SPI idle = 0");
+  //read writable
+  #20 spi_transaction(offset+12 | 8'h80, 16'h00, addr_read, data_read);
+  if(data_read != 16'h01) $error("SPI writable = 0");
   
+  #20 spi_transaction(offset+0, 16'haa55, addr_read, data_read);
   
   #40000 if(error==0)
     $display("Testbench timed out, no error."); // Timeout
