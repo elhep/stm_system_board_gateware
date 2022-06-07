@@ -8,6 +8,7 @@ parameter SPI_PERIOD = 12;
 parameter DUMMY_CYCLES = 8;
 parameter addr_w = 8;
 parameter data_w = 16;
+parameter spi_model_data_width = 16;
 	
 integer i;
 
@@ -17,7 +18,8 @@ reg              spi_mosi;
 wire              spi_miso;
 reg              spi_cs;
 wire spisdcard_clk, spisdcard_mosi, spisdcard_cs_n;
-reg spisdcard_miso;
+reg spisdcard_miso = 0;
+reg [spi_model_data_width-1:0] spi_model = 0;
 
 wire     [data_w-1:0]    output0;
 wire     [data_w-1:0]    output1;
@@ -29,6 +31,7 @@ reg [data_w-1:0] data_read;
 wire interrupt, led_g, led_b;
 
 integer error=0;
+integer data, data_old;
 
 silpa_fpga uut (
     .clk480           (   sys_clk),
@@ -126,11 +129,12 @@ task automatic clear_int(input [2:0] slot, input [data_w-1:0] data);
 		#20 spi_transaction(slot+40, data, addr_read, data_read);
 	end
 endtask
-integer offset=3;
+
+integer offset=6;
 task automatic configure_spi_machine(input [2:0] slot);
 	begin
 		//length = 16 bit -1
-		#20 spi_transaction(offset+1, 8'hf, addr_read, data_read);
+		#20 spi_transaction(offset+1, spi_model_data_width-1, addr_read, data_read);
 		//active chip selects
 		#20 spi_transaction(offset+2, 1'b1, addr_read, data_read);
 		//cs_polarity
@@ -152,6 +156,31 @@ task automatic configure_spi_machine(input [2:0] slot);
 	end
 endtask
 
+task automatic spi_machine_write_and_read(input [spi_model_data_width-1:0] data);
+	begin
+  		#20 spi_transaction(offset+0, data, addr_read, data_read);
+		  data_read = 0;
+		  while (data_read != 1) begin
+			//check idle
+		  	#20 spi_transaction(offset+13 | 8'h80, 16'h00, addr_read, data_read);
+		  end
+		  if(spi_model != data) $error("SPI master write error");
+		  #20 spi_transaction(offset+0 | 8'h80, data, addr_read, data_read);
+		  if(data_read != data_old) $error("SPI readback error");
+		  data_old = data;
+	end
+endtask
+
+
+
+always @(posedge spisdcard_clk) begin
+	spisdcard_miso <= spi_model[spi_model_data_width-1];
+	spi_model[0] <= spisdcard_mosi;
+	spi_model[spi_model_data_width-1:1] <= spi_model[spi_model_data_width-2:0];
+end
+always @(negedge spisdcard_clk) begin
+	spisdcard_miso <= spi_model[spi_model_data_width-1];
+end
 
 // ---------------------------------------------------------------------------------------------------------------------
 // RESET AND TIMEOUT
@@ -166,7 +195,6 @@ initial begin
   spi_clk = 1'b0;
   spi_mosi = 1'b0;
   spi_cs = 1'b1;
-  spisdcard_miso = 1'b0;
   //output0 = 16'bzzzzzzzzzzzzzzzz;
 
   #50 rst = 1'b0;
@@ -209,7 +237,24 @@ initial begin
   #20 spi_transaction(offset+12 | 8'h80, 16'h00, addr_read, data_read);
   if(data_read != 16'h01) $error("SPI writable = 0");
   
-  #20 spi_transaction(offset+0, 16'haa55, addr_read, data_read);
+  data = 16'haa55;
+  #20 spi_transaction(offset+0, data, addr_read, data_read);
+  data_read = 0;
+  while (data_read != 1) begin
+	//check idle
+  	#20 spi_transaction(offset+13 | 8'h80, 16'h00, addr_read, data_read);
+  end
+  if(spi_model != data) $error("SPI master write error");
+  data_old = data;
+
+  spi_machine_write_and_read(16'h8000);
+  spi_machine_write_and_read(16'h0001);
+  spi_machine_write_and_read(16'h5555);
+  spi_machine_write_and_read(16'haaaa);
+  spi_machine_write_and_read(16'hffff);
+  spi_machine_write_and_read(16'h0000);
+  spi_machine_write_and_read(16'h0000);
+
   
   #40000 if(error==0)
     $display("Testbench timed out, no error."); // Timeout

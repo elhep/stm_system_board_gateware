@@ -321,7 +321,9 @@ class SPI2WB(Module):
 
         self.sync.le += [
             self.di.eq(sr),
-            spi_trans_done.eq(1),
+            If(~read_data_done,
+                spi_trans_done.eq(1)
+            ),
             read_data_done.eq(0),
             self.counter1.eq(0),
         ]
@@ -389,11 +391,36 @@ class DiotLEC_WB(Module, AutoCSR):
         self.output = CSRStorage(16)
         self.input = CSRStatus(16)
         self.oe = CSRStorage(16)
+        self.interrupt = CSRStatus(16)
+        self.interrupt_mask = CSRStorage(16)
+        self.interrupt_clear = CSRStorage(16)
+
         for i in range(16):
             self.comb += [
                 self.slot[0][i].o.eq(self.output.storage[i]),
                 self.input.status[i].eq(self.slot[0][i].i),
-                self.slot[0][i].oe.eq(self.oe.storage[i])
+                self.slot[0][i].oe.eq(self.oe.storage[i]),
+
+            ]
+        self.comb += self.io_interrupt[0].eq(reduce(or_, self.interrupt.status & self.interrupt_mask.storage))
+
+        # Interrupts
+        flat_input = [self.input.status[j] for i in range(self.slots_num) for j in range(16)]
+        flat_oe = [self.oe.storage[j] for i in range(self.slots_num) for j in range(16)]
+        flat_interrupt = [self.interrupt.status[j] for i in range(self.slots_num) for j in range(16)]
+        flat_interrupt_clear = [self.interrupt_clear.storage[j] for i in range(self.slots_num) for j in range(16)]
+        flat_interrupt_mask = [self.interrupt_mask.storage[j] for i in range(self.slots_num) for j in range(16)]
+        for (input, dir, interrupt, clear, mask) in zip(flat_input, flat_oe, flat_interrupt, flat_interrupt_clear,
+                                                        flat_interrupt_mask):
+            edge = Signal(2)
+            self.sync.sys += [
+                edge[1].eq(edge[0]),
+                edge[0].eq(input),
+                If((edge[0] ^ edge[1]) & (mask & (~dir)),
+                   interrupt.eq(1),
+                   ).Elif(clear,
+                          interrupt.eq(0)
+                          )
             ]
 
         spi_interface = SPIInterface(spi_pads)
