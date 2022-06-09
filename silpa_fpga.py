@@ -393,7 +393,7 @@ class DiotLEC_WB(Module, AutoCSR):
         self.oe = CSRStorage(16)
         self.interrupt = CSRStatus(16)
         self.interrupt_mask = CSRStorage(16)
-        self.interrupt_clear = CSRStorage(16)
+        self.interrupt_clear = CSRStorage(16, write_from_dev=True)
 
         for i in range(16):
             self.comb += [
@@ -422,6 +422,14 @@ class DiotLEC_WB(Module, AutoCSR):
                    interrupt.eq(0)
                 )
             ]
+        # Clearing interrupt clear register
+        self.sync.sys += [
+            self.interrupt_clear.dat_w.eq(0),
+            self.interrupt_clear.we.eq(0),
+            If(self.interrupt_clear.re,
+                self.interrupt_clear.we.eq(1)
+            )
+        ]
 
         spi_interface = SPIInterface(spi_pads)
         self.spi_master = SPIMaster(spi_interface, data_width=16, div_width=8)

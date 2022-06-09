@@ -260,6 +260,9 @@ initial begin
   read_interrupt(3'd0, data_read);
   if(data_read != 16'h01) $error("Interrupt not registered!");
   if(~interrupt) $error("Interrupt to STM is low!");
+  clear_int(3'd0, 16'hffff);
+  read_interrupt(3'd0, data_read);
+  if(data_read != 16'h00) $error("Interrupts not cleared!");
   
   //#20 output0_reg = 16'h0001;
   //clear_int(3'd0, 16'hffff);
