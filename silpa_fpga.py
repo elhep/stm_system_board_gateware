@@ -418,9 +418,9 @@ class DiotLEC_WB(Module, AutoCSR):
                 edge[0].eq(input),
                 If((edge[0] ^ edge[1]) & (mask & (~dir)),
                    interrupt.eq(1),
-                   ).Elif(clear,
-                          interrupt.eq(0)
-                          )
+                ).Elif(clear,
+                   interrupt.eq(0)
+                )
             ]
 
         spi_interface = SPIInterface(spi_pads)
