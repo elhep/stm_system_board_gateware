@@ -22,8 +22,6 @@ class SPI2WB(Module):
         self.specials += Instance("FD1P3BX",
                                   i_D=0, i_CK=ClockSignal("sck1"), i_SP=self.sel, i_PD=~self.sel,
                                   o_Q=self.cd_le.clk)
-        self.clock_domains.cd_le_n = ClockDomain("le_n", reset_less=True)
-        self.comb += [self.cd_le_n.clk.eq(~self.cd_le.clk)]
 
         self.counter1 = Signal(ceil(log2(self.width)))
         self.specials += Instance("counter",

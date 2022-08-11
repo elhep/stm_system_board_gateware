@@ -38,32 +38,39 @@ class DiotLEC_WB(Module, AutoCSR):
         self.wishbone = wishbone.Interface(data_width=16, adr_width=8)
         self.submodules.buses = wishbone2csr.WB2CSR(bus_wishbone=self.wishbone, bus_csr=self.csr_bus)
 
-        self.output = []
-        self.output = CSRStorage(16)
-        self.input = CSRStatus(16)
-        self.oe = CSRStorage(16)
-        self.interrupt = CSRStatus(16)
-        self.interrupt_mask = CSRStorage(16)
-        self.interrupt_clear = CSRStorage(16, write_from_dev=True)
+        for i in range(self.slots_num):
+            setattr(self, "output{}".format(i), CSRStorage(16, name="output{}".format(i)))
+        for i in range(self.slots_num):
+            setattr(self, "input{}".format(i), CSRStatus(16, name="ouinputtput{}".format(i)))
+        for i in range(self.slots_num):
+            setattr(self, "oe{}".format(i), CSRStorage(16, name="oe{}".format(i)))
+        for i in range(self.slots_num):
+            setattr(self, "interrupt{}".format(i), CSRStatus(16, name="interrupt{}".format(i)))
+        for i in range(self.slots_num):
+            setattr(self, "interrupt_mask{}".format(i), CSRStorage(16, name="interrupt_mask{}".format(i)))
+        for i in range(self.slots_num):
+            setattr(self, "interrupt_clear{}".format(i), CSRStorage(16, name="interrupt_clear{}".format(i), write_from_dev=True))
         self.id = CSRStatus(16)
         self.id2 = CSRStatus(16)
 
-        for i in range(16):
-            self.comb += [
-                self.slot[0][i].o.eq(self.output.storage[i]),
-                self.input.status[i].eq(self.slot[0][i].i),
-                self.slot[0][i].oe.eq(self.oe.storage[i]),
-            ]
-        self.comb += self.io_interrupt[0].eq(reduce(or_, self.interrupt.status & self.interrupt_mask.storage))
+        for j in range(self.slots_num):
+            for i in range(16):
+                self.comb += [
+                    self.slot[0][i].o.eq(getattr(self, "output{}".format(j)).storage[i]),
+                    getattr(self, "input{}".format(j)).status[i].eq(self.slot[0][i].i),
+                    self.slot[0][i].oe.eq(getattr(self, "oe{}".format(j)).storage[i]),
+                ]
+            self.comb += self.io_interrupt[0].eq(
+                reduce(or_, getattr(self, "interrupt{}".format(j)).status & getattr(self, "interrupt_mask{}".format(j)).storage))
         self.comb += self.id.status.eq(0xaaaa)
         self.comb += self.id2.status.eq(0x5555)
 
         # Interrupts
-        flat_input = [self.input.status[j] for i in range(self.slots_num) for j in range(16)]
-        flat_oe = [self.oe.storage[j] for i in range(self.slots_num) for j in range(16)]
-        flat_interrupt = [self.interrupt.status[j] for i in range(self.slots_num) for j in range(16)]
-        flat_interrupt_clear = [self.interrupt_clear.storage[j] for i in range(self.slots_num) for j in range(16)]
-        flat_interrupt_mask = [self.interrupt_mask.storage[j] for i in range(self.slots_num) for j in range(16)]
+        flat_input = [getattr(self, "input{}".format(i)).status[j] for i in range(self.slots_num) for j in range(16)]
+        flat_oe = [getattr(self, "oe{}".format(i)).storage[j] for i in range(self.slots_num) for j in range(16)]
+        flat_interrupt = [getattr(self, "interrupt{}".format(i)).status[j] for i in range(self.slots_num) for j in range(16)]
+        flat_interrupt_clear = [getattr(self, "interrupt_clear{}".format(i)).storage[j] for i in range(self.slots_num) for j in range(16)]
+        flat_interrupt_mask = [getattr(self, "interrupt_mask{}".format(i)).storage[j] for i in range(self.slots_num) for j in range(16)]
         for (input, dir, interrupt, clear, mask) in zip(flat_input, flat_oe, flat_interrupt, flat_interrupt_clear,
                                                         flat_interrupt_mask):
             edge = Signal(2)
@@ -77,13 +84,14 @@ class DiotLEC_WB(Module, AutoCSR):
                 )
             ]
         # Clearing interrupt clear register
-        self.sync.sys += [
-            self.interrupt_clear.dat_w.eq(0),
-            self.interrupt_clear.we.eq(0),
-            If(self.interrupt_clear.re,
-                self.interrupt_clear.we.eq(1)
-            )
-        ]
+        for i in range(self.slots_num):
+            self.sync.sys += [
+                getattr(self, "interrupt_clear{}".format(i)).dat_w.eq(0),
+                getattr(self, "interrupt_clear{}".format(i)).we.eq(0),
+                If(getattr(self, "interrupt_clear{}".format(i)).re,
+                    getattr(self, "interrupt_clear{}".format(i)).we.eq(1)
+                )
+            ]
 
         spi_interface = SPIInterface(spi_pads)
         self.spi_master = SPIMaster(spi_interface, data_width=16, div_width=8)
@@ -108,17 +116,14 @@ class SilpaFPGA(Module):
 
         self.clock_domains.cd_sys = ClockDomain("sys")
 
-        # self.logic = DiotLEC_Simple(address_reg_len=8, slots=8)
         spi_output_pads = platform.request("spisdcard")
-        self.logic = DiotLEC_WB(platform=platform, spi_pads=spi_output_pads, address_reg_len=8, slots=1)
+        self.logic = DiotLEC_WB(platform=platform, spi_pads=spi_output_pads, address_reg_len=8, slots=8)
         self.submodules += self.logic
 
         for slot in [self.logic.slot[0]]:
             io = platform.request("slot")
             for i, triple in enumerate(slot):
                 self.specials += triple.get_tristate(io[i])
-        # io = platform.request("slot")
-        # self.comb += io.eq(self.logic.spi_slave.debug)
 
         self.r_led = platform.request("user_led")
         self.g_led = platform.request("user_led")
@@ -132,9 +137,8 @@ class SilpaFPGA(Module):
             self.logic.cs.eq(~spi.cs_n),
             self.logic.spi_clk.eq(spi.clk),
             self.cd_sys.clk.eq(platform.request("clk48", 0)),
-            # self.r_led.eq(self.logic.io_interrupt[0]),
+            self.r_led.eq(self.logic.io_interrupt[0]),
             self.g_led.eq(self.logic.slot[0][0].o),
-            self.r_led.eq(self.logic.output.storage[0]),
             self.reset.eq(self.button),
         ]
 
@@ -175,7 +179,7 @@ if __name__ == "__main__":
     silpa_fpga = SilpaFPGA(platform)
 
     from migen.fhdl.specials import Tristate
-    sim = False
+    sim = True
     so = {}
     if sim:
         so = {Tristate: LatticeECP5TrellisTristateDiamond}
