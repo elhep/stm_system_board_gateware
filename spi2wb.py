@@ -37,7 +37,6 @@ class SPI2WB(Module):
 
         read_sck = Signal()
         self.debug = Signal()
-        # self.comb +=
         read_wb = Signal()
         read_addr = Signal(address_width)
         read_data_sck = Signal(data_width)
@@ -63,6 +62,9 @@ class SPI2WB(Module):
             read_data_valid_ack_sck.eq(0),
             self.debug.eq(0),
             If(self.sel,
+               If(self.counter1 == 0,
+                  read_data_done.eq(0),
+               ),
                If(self.counter1 == address_width + 1,
                   If(sr[7],
                      read_sck.eq(1),
@@ -87,16 +89,12 @@ class SPI2WB(Module):
 
         self.sync.le += [
             self.di.eq(sr),
-            If(~read_data_done,
-               spi_trans_done.eq(1)
-            ),
-            # read_data_done.eq(0),
-            # self.counter1_reset.eq(0),
         ]
 
-
-
         self.sync.sys += [
+            If(~read_data_done & ~self.sel,
+               spi_trans_done.eq(1)
+            ),
             If(read_data_valid_ack_wb,
                read_data_valid_wb.eq(0),
             ),

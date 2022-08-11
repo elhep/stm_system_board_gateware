@@ -175,7 +175,7 @@ if __name__ == "__main__":
     silpa_fpga = SilpaFPGA(platform)
 
     from migen.fhdl.specials import Tristate
-    sim = True
+    sim = False
     so = {}
     if sim:
         so = {Tristate: LatticeECP5TrellisTristateDiamond}
