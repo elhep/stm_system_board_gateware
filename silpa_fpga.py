@@ -9,7 +9,7 @@ from spi2wb import SPI2WB
 
 
 class DiotLEC_WB(Module, AutoCSR):
-    def __init__(self, spi_pads, address_reg_len=8, slots=8):
+    def __init__(self, platform, spi_pads, address_reg_len=8, slots=8):
 
         self.address_reg_len = address_reg_len
         self.slots_num = slots
@@ -45,15 +45,18 @@ class DiotLEC_WB(Module, AutoCSR):
         self.interrupt = CSRStatus(16)
         self.interrupt_mask = CSRStorage(16)
         self.interrupt_clear = CSRStorage(16, write_from_dev=True)
+        self.id = CSRStatus(16)
+        self.id2 = CSRStatus(16)
 
         for i in range(16):
             self.comb += [
                 self.slot[0][i].o.eq(self.output.storage[i]),
                 self.input.status[i].eq(self.slot[0][i].i),
                 self.slot[0][i].oe.eq(self.oe.storage[i]),
-
             ]
         self.comb += self.io_interrupt[0].eq(reduce(or_, self.interrupt.status & self.interrupt_mask.storage))
+        self.comb += self.id.status.eq(0xaaaa)
+        self.comb += self.id2.status.eq(0x5555)
 
         # Interrupts
         flat_input = [self.input.status[j] for i in range(self.slots_num) for j in range(16)]
@@ -89,7 +92,7 @@ class DiotLEC_WB(Module, AutoCSR):
         assert len(self.get_csrs()) < 2**(address_reg_len-1)
         self.submodules.csrs = csr_bus.CSRBank(self.get_csrs(), address=0, bus=self.csr_bus, align_bits=4)
 
-        self.submodules.spi_slave = SPI2WB(self.wishbone)
+        self.submodules.spi_slave = SPI2WB(platform=platform, wb_bus=self.wishbone)
         self.comb += [
             self.spi_slave.sdi.eq(self.mosi),
             self.spi_slave.sel.eq(self.cs),
@@ -107,13 +110,15 @@ class SilpaFPGA(Module):
 
         # self.logic = DiotLEC_Simple(address_reg_len=8, slots=8)
         spi_output_pads = platform.request("spisdcard")
-        self.logic = DiotLEC_WB(spi_pads=spi_output_pads, address_reg_len=8, slots=1)
+        self.logic = DiotLEC_WB(platform=platform, spi_pads=spi_output_pads, address_reg_len=8, slots=1)
         self.submodules += self.logic
 
         for slot in [self.logic.slot[0]]:
             io = platform.request("slot")
             for i, triple in enumerate(slot):
                 self.specials += triple.get_tristate(io[i])
+        # io = platform.request("slot")
+        # self.comb += io.eq(self.logic.spi_slave.debug)
 
         self.r_led = platform.request("user_led")
         self.g_led = platform.request("user_led")
@@ -127,8 +132,9 @@ class SilpaFPGA(Module):
             self.logic.cs.eq(~spi.cs_n),
             self.logic.spi_clk.eq(spi.clk),
             self.cd_sys.clk.eq(platform.request("clk48", 0)),
-            self.r_led.eq(self.logic.io_interrupt[0]),
+            # self.r_led.eq(self.logic.io_interrupt[0]),
             self.g_led.eq(self.logic.slot[0][0].o),
+            self.r_led.eq(self.logic.output.storage[0]),
             self.reset.eq(self.button),
         ]
 
@@ -169,7 +175,7 @@ if __name__ == "__main__":
     silpa_fpga = SilpaFPGA(platform)
 
     from migen.fhdl.specials import Tristate
-    sim = False
+    sim = True
     so = {}
     if sim:
         so = {Tristate: LatticeECP5TrellisTristateDiamond}
