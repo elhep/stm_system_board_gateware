@@ -15,15 +15,13 @@ parameter slots_num = 1;
 reg [30*8-1:0] textsignal;
 integer i;
 //registers before spi_register
-integer offset_to_spi=slots_num*6;
+integer offset_to_spi=slots_num*6+2;
 
 reg                rst;
 reg              spi_clk;
 reg              spi_mosi;
 wire              spi_miso;
 reg              spi_cs;
-wire spisdcard_clk, spisdcard_mosi, spisdcard_cs_n;
-reg spisdcard_miso = 0;
 reg [spi_model_data_width-1:0] spi_model = 0;
 
 reg     [data_w-1:0]    output0_reg;
@@ -50,11 +48,7 @@ silpa_fpga uut (
 	.slot(output0),
 	.user_led(interrupt),
         .user_led_1(led_g),
-        .user_led_2(led_b),
-	.spisdcard_clk(spisdcard_clk),
-	.spisdcard_mosi(spisdcard_mosi),
-	.spisdcard_cs_n(spisdcard_cs_n),
-	.spisdcard_miso(spisdcard_miso)
+        .user_led_2(led_b)
 	//.slot1(output1)
 );
 
@@ -192,14 +186,14 @@ task automatic spi_machine_write_and_read(input [spi_model_data_width-1:0] data)
 endtask
 
 
-always @(posedge spisdcard_clk) begin
-	spisdcard_miso <= spi_model[spi_model_data_width-1];
-	spi_model[0] <= spisdcard_mosi;
-	spi_model[spi_model_data_width-1:1] <= spi_model[spi_model_data_width-2:0];
-end
-always @(negedge spisdcard_clk) begin
-	spisdcard_miso <= spi_model[spi_model_data_width-1];
-end
+//always @(posedge spisdcard_clk) begin
+//	spisdcard_miso <= spi_model[spi_model_data_width-1];
+//	spi_model[0] <= spisdcard_mosi;
+//	spi_model[spi_model_data_width-1:1] <= spi_model[spi_model_data_width-2:0];
+//end
+//always @(negedge spisdcard_clk) begin
+//	spisdcard_miso <= spi_model[spi_model_data_width-1];
+//end
 assign output0 = ~output0_dir ? output0_reg : 16'bzzzzzzzzzzzzzzzz;
 // ---------------------------------------------------------------------------------------------------------------------
 // RESET AND TIMEOUT
@@ -269,6 +263,7 @@ initial begin
 
   //SPI master interface check
   textsignal = "SPI master interface";
+  #20 output0_dir = 1;
   #20 configure_spi_machine(0);
   #100
   //read idle

@@ -4,12 +4,13 @@ from misoc.interconnect import wishbone, csr_bus, wishbone2csr
 from functools import reduce
 from operator import or_
 from misoc.interconnect.csr import CSRStatus, CSRStorage, AutoCSR
-from misoc.cores.spi2 import SPIMaster, SPIInterface
+from misoc.cores.spi2 import SPIMaster
+from SpiInterface import SPIInterface
 from spi2wb import SPI2WB
 
 
 class DiotLEC_WB(Module, AutoCSR):
-    def __init__(self, platform, spi_pads, address_reg_len=8, slots=8):
+    def __init__(self, platform, address_reg_len=8, slots=8):
 
         self.address_reg_len = address_reg_len
         self.slots_num = slots
@@ -34,6 +35,7 @@ class DiotLEC_WB(Module, AutoCSR):
             self.cd_sck1.clk.eq(self.spi_clk)
         ]
 
+        # CSRs
         self.csr_bus = csr_bus.Interface(data_width=16, address_width=8)
         self.wishbone = wishbone.Interface(data_width=16, adr_width=8)
         self.submodules.buses = wishbone2csr.WB2CSR(bus_wishbone=self.wishbone, bus_csr=self.csr_bus)
@@ -41,7 +43,7 @@ class DiotLEC_WB(Module, AutoCSR):
         for i in range(self.slots_num):
             setattr(self, "output{}".format(i), CSRStorage(16, name="output{}".format(i)))
         for i in range(self.slots_num):
-            setattr(self, "input{}".format(i), CSRStatus(16, name="ouinputtput{}".format(i)))
+            setattr(self, "input{}".format(i), CSRStatus(16, name="input{}".format(i)))
         for i in range(self.slots_num):
             setattr(self, "oe{}".format(i), CSRStorage(16, name="oe{}".format(i)))
         for i in range(self.slots_num):
@@ -53,12 +55,34 @@ class DiotLEC_WB(Module, AutoCSR):
         self.id = CSRStatus(16)
         self.id2 = CSRStatus(16)
 
+        # SPI masters
+        self.spi_master = []
+        spi_if_signals = []
+        for i in range(self.slots_num):
+            spi_interface = SPIInterface()
+            spi_master = SPIMaster(spi_interface, data_width=16, div_width=8)
+            setattr(self, "spi_master{}".format(i), spi_master)
+            self.spi_master.append(spi_master)
+            self.submodules += spi_master
+            spi_if_signals.append([spi_interface.mosi, spi_interface.miso, spi_interface.cs_spi, spi_interface.clk])
+
         for j in range(self.slots_num):
-            for i in range(16):
+            for i, spi_sig in enumerate(spi_if_signals[j]):
                 self.comb += [
-                    self.slot[0][i].o.eq(getattr(self, "output{}".format(j)).storage[i]),
-                    getattr(self, "input{}".format(j)).status[i].eq(self.slot[0][i].i),
-                    self.slot[0][i].oe.eq(getattr(self, "oe{}".format(j)).storage[i]),
+                    self.slot[j][i].o.eq(Mux(self.spi_master[j].offline.storage,
+                                            getattr(self, "output{}".format(j)).storage[i],
+                                            spi_sig.o)),  # If offline then use register value, else use spi interface
+                    getattr(self, "input{}".format(j)).status[i].eq(self.slot[j][i].i),
+                    spi_sig.i.eq(self.slot[j][i].i),
+                    self.slot[j][i].oe.eq(Mux(self.spi_master[j].offline.storage,
+                                              getattr(self, "oe{}".format(j)).storage[i],
+                                              spi_sig.oe))
+                ]
+            for i in range(4, 16):
+                self.comb += [
+                    self.slot[j][i].o.eq(getattr(self, "output{}".format(j)).storage[i]),
+                    getattr(self, "input{}".format(j)).status[i].eq(self.slot[j][i].i),
+                    self.slot[j][i].oe.eq(getattr(self, "oe{}".format(j)).storage[i]),
                 ]
             self.comb += self.io_interrupt[0].eq(
                 reduce(or_, getattr(self, "interrupt{}".format(j)).status & getattr(self, "interrupt_mask{}".format(j)).storage))
@@ -66,6 +90,7 @@ class DiotLEC_WB(Module, AutoCSR):
         self.comb += self.id2.status.eq(0x5555)
 
         # Interrupts
+        # TODO: do not trigger interrupt on spi pins if spi is active
         flat_input = [getattr(self, "input{}".format(i)).status[j] for i in range(self.slots_num) for j in range(16)]
         flat_oe = [getattr(self, "oe{}".format(i)).storage[j] for i in range(self.slots_num) for j in range(16)]
         flat_interrupt = [getattr(self, "interrupt{}".format(i)).status[j] for i in range(self.slots_num) for j in range(16)]
@@ -93,9 +118,6 @@ class DiotLEC_WB(Module, AutoCSR):
                 )
             ]
 
-        spi_interface = SPIInterface(spi_pads)
-        self.spi_master = SPIMaster(spi_interface, data_width=16, div_width=8)
-        self.submodules += self.spi_master
         print("# of registers:", len(self.get_csrs()))
         assert len(self.get_csrs()) < 2**(address_reg_len-1)
         self.submodules.csrs = csr_bus.CSRBank(self.get_csrs(), address=0, bus=self.csr_bus, align_bits=4)
@@ -116,8 +138,7 @@ class SilpaFPGA(Module):
 
         self.clock_domains.cd_sys = ClockDomain("sys")
 
-        spi_output_pads = platform.request("spisdcard")
-        self.logic = DiotLEC_WB(platform=platform, spi_pads=spi_output_pads, address_reg_len=8, slots=8)
+        self.logic = DiotLEC_WB(platform=platform, address_reg_len=8, slots=1)
         self.submodules += self.logic
 
         for slot in [self.logic.slot[0]]:
