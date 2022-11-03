@@ -64,7 +64,7 @@ class SPI2WB(Module):
                   read_data_done.eq(0),
                ),
                If(self.counter1 == address_width + 1,
-                  If(sr[7],
+                  If(sr[7],  # TODO: hardcoded value
                      read_sck.eq(1),
                   ),
                   self.debug.eq(1),
@@ -88,8 +88,12 @@ class SPI2WB(Module):
         self.sync.le += [
             self.di.eq(sr),
         ]
-
+        write_done = Signal()
+        # TODO: Rewrite to FSM, there's still a duplicated transaction on WB
         self.sync.sys += [
+            If(self.sel,
+               write_done.eq(0)
+            ),
             If(~read_data_done & ~self.sel,
                spi_trans_done.eq(1)
             ),
@@ -100,6 +104,7 @@ class SPI2WB(Module):
                self.wb.cyc.eq(0),
                self.wb.stb.eq(0),
                self.wb.we.eq(0),
+               spi_trans_done.eq(0),
                If(~self.wb.we,
                   read_data_wb.eq(self.wb.dat_r),
                   read_data_valid_wb.eq(1)
@@ -109,13 +114,14 @@ class SPI2WB(Module):
                self.wb.we.eq(0),
                self.wb.stb.eq(1),
                self.wb.cyc.eq(1),
-            ).Elif(spi_trans_done & ~read_data_done,
+            ).Elif(spi_trans_done & ~read_data_done & ~write_done,
                self.wb.adr.eq(read_addr),
                self.wb.dat_w.eq(self.di[:data_width]),
                self.wb.sel.eq(2 ** len(self.wb.sel) - 1),
                self.wb.we.eq(1),
                self.wb.cyc.eq(1),
                self.wb.stb.eq(1),
-               spi_trans_done.eq(0)
+               spi_trans_done.eq(0),
+               write_done.eq(1)
             )
         ]

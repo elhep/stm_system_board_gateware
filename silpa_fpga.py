@@ -122,6 +122,9 @@ class DiotLEC_WB(Module, AutoCSR):
         assert len(self.get_csrs()) < 2**(address_reg_len-1)
         self.submodules.csrs = csr_bus.CSRBank(self.get_csrs(), address=0, bus=self.csr_bus, align_bits=4)
 
+        # SPI Slave
+        # TODO: extend address to 8 bits or shrink SPI address space
+        # TODO: add support to x2 and x4 SPI (QSPI)
         self.submodules.spi_slave = SPI2WB(platform=platform, wb_bus=self.wishbone)
         self.comb += [
             self.spi_slave.sdi.eq(self.mosi),
@@ -138,7 +141,7 @@ class SilpaFPGA(Module):
 
         self.clock_domains.cd_sys = ClockDomain("sys")
 
-        self.logic = DiotLEC_WB(platform=platform, address_reg_len=8, slots=1)
+        self.logic = DiotLEC_WB(platform=platform, address_reg_len=7, slots=1)
         self.submodules += self.logic
 
         for slot in [self.logic.slot[0]]:

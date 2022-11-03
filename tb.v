@@ -258,8 +258,8 @@ initial begin
   read_interrupt(3'd0, data_read);
   if(data_read != 16'h00) $error("Interrupts not cleared!");
   
-  //#20 output0_reg = 16'h0001;
-  //clear_int(3'd0, 16'hffff);
+  #20 output0_reg = 16'h0001;
+  clear_int(3'd0, 16'hffff);
 
   //SPI master interface check
   textsignal = "SPI master interface";
@@ -290,6 +290,10 @@ initial begin
   spi_machine_write_and_read(16'hffff);
   spi_machine_write_and_read(16'h0000);
   spi_machine_write_and_read(16'h0000);
+  #200
+  #20 spi_transaction(offset_to_spi+0, 16'haaaa , addr_read, data_read);
+
+  #3000 spi_transaction(offset_to_spi+0, 16'h55aa , addr_read, data_read);
 
   
   #40000 if(error==0)
