@@ -295,6 +295,8 @@ initial begin
 
   #3000 spi_transaction(offset_to_spi+0, 16'h55aa , addr_read, data_read);
 
+  #20 spi_transaction(offset_to_spi+0, 16'haaaa, addr_read, data_read);
+
   
   #40000 if(error==0)
     $display("Testbench timed out, no error."); // Timeout
