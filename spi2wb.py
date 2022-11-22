@@ -44,6 +44,7 @@ class SPI2WB(Module):
         read_data_valid_ack_sck = Signal()
         read_data_valid_ack_wb = Signal()
         read_data_done = Signal()
+        spi_trans_done = Signal()
 
         ps = PulseSynchronizer(idomain="sck1", odomain="sys")
         self.submodules += ps
@@ -55,7 +56,6 @@ class SPI2WB(Module):
         self.specials += MultiReg(read_data_valid_wb, read_data_valid_sck, odomain="sck1")
 
         self.sync.sck1 += [
-            # TODO Also rewrite to FSM
             read_sck.eq(0),
             read_data_valid_ack_sck.eq(0),
             self.debug.eq(0),
@@ -88,103 +88,40 @@ class SPI2WB(Module):
         self.sync.le += [
             self.di.eq(sr),
         ]
-
-        fsm = FSM("WAIT_FOR_SPI_TRANSACTION_BEGIN")
-        self.submodules += fsm
-
-        # 0
-        fsm.act("WAIT_FOR_SPI_TRANSACTION_BEGIN",
+        write_done = Signal()
+        # TODO: Rewrite to FSM, there's still a duplicated transaction on WB
+        self.sync.sys += [
             If(self.sel,
-               NextState("WAIT_FOR_SPI_TRANSACTION_READ_OR_END")
-            ).Else(
-                NextState("WAIT_FOR_SPI_TRANSACTION_BEGIN")
-            )
-        )
-        # 1
-        fsm.act("WAIT_FOR_SPI_TRANSACTION_READ_OR_END",
-            If(read_wb & self.sel,
-                NextState("READ")
-            ).Elif(self.sel,
-                NextState("WAIT_FOR_SPI_TRANSACTION_READ_OR_END")
-            ).Else(
-                NextState("WRITE")
-            )
-        )
-        # 2
-        fsm.act("READ",
-            self.wb.adr.eq(read_addr),
-            self.wb.we.eq(0),
-            self.wb.stb.eq(1),
-            self.wb.cyc.eq(1),
-            NextState("WAIT_ACK_READ")
-        )
-        # 3
-        fsm.act("WAIT_ACK_READ",
-            self.wb.adr.eq(read_addr),
-            self.wb.we.eq(0),
-            self.wb.stb.eq(1),
-            self.wb.cyc.eq(1),
-            If(self.wb.ack,
-               NextState("READ_DONE")
-            ).Else(
-               NextState("WAIT_ACK_READ")
-            )
-        )
-        # 4
-        fsm.act("READ_DONE",
-            self.wb.cyc.eq(0),
-            self.wb.stb.eq(0),
-            self.wb.we.eq(0),
-            read_data_wb.eq(self.wb.dat_r),
-            read_data_valid_wb.eq(1),
-            NextState("WAIT_ACK_READ_SCK")
-        )
-        # 5
-        fsm.act("WAIT_ACK_READ_SCK",
+               write_done.eq(0)
+            ),
+            If(~read_data_done & ~self.sel,
+               spi_trans_done.eq(1)
+            ),
             If(read_data_valid_ack_wb,
-                read_data_valid_wb.eq(0),
-                NextState("WAIT_FOR_SPI_TRANSACTION_END")
-            ).Else(
-                read_data_wb.eq(self.wb.dat_r),
-                read_data_valid_wb.eq(1),
-                NextState("WAIT_ACK_READ_SCK")
-            )
-        )
-        fsm.act("WAIT_FOR_SPI_TRANSACTION_END",
-            If(~self.sel,
-                NextState("WAIT_FOR_SPI_TRANSACTION_BEGIN")
-            ).Else(
-                NextState("WAIT_FOR_SPI_TRANSACTION_END")
-            )
-        )
-        # 7
-        fsm.act("WRITE",
-            self.wb.adr.eq(read_addr),
-            self.wb.dat_w.eq(self.di[:data_width]),
-            self.wb.sel.eq(2 ** len(self.wb.sel) - 1),
-            self.wb.we.eq(1),
-            self.wb.cyc.eq(1),
-            self.wb.stb.eq(1),
-            NextState("WAIT_ACK_WRITE")
-        )
-        # 8
-        fsm.act("WAIT_ACK_WRITE",
-            self.wb.adr.eq(read_addr),
-            self.wb.dat_w.eq(self.di[:data_width]),
-            self.wb.sel.eq(2 ** len(self.wb.sel) - 1),
-            self.wb.we.eq(1),
-            self.wb.cyc.eq(1),
-            self.wb.stb.eq(1),
+               read_data_valid_wb.eq(0),
+            ),
             If(self.wb.ack,
-               NextState("WRITE_DONE")
-            ).Else(
-               NextState("WAIT_ACK_WRITE")
+               self.wb.cyc.eq(0),
+               self.wb.stb.eq(0),
+               self.wb.we.eq(0),
+               spi_trans_done.eq(0),
+               If(~self.wb.we,
+                  read_data_wb.eq(self.wb.dat_r),
+                  read_data_valid_wb.eq(1)
+               )
+            ).Elif(read_wb,
+               self.wb.adr.eq(read_addr),
+               self.wb.we.eq(0),
+               self.wb.stb.eq(1),
+               self.wb.cyc.eq(1),
+            ).Elif(spi_trans_done & ~read_data_done & ~write_done,
+               self.wb.adr.eq(read_addr),
+               self.wb.dat_w.eq(self.di[:data_width]),
+               self.wb.sel.eq(2 ** len(self.wb.sel) - 1),
+               self.wb.we.eq(1),
+               self.wb.cyc.eq(1),
+               self.wb.stb.eq(1),
+               spi_trans_done.eq(0),
+               write_done.eq(1)
             )
-        )
-        # 9
-        fsm.act("WRITE_DONE",
-            self.wb.cyc.eq(0),
-            self.wb.stb.eq(0),
-            self.wb.we.eq(0),
-            NextState("WAIT_FOR_SPI_TRANSACTION_BEGIN")
-        )
+        ]
