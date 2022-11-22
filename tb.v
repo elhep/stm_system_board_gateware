@@ -6,7 +6,7 @@ parameter SYS_PERIOD = 8;
 parameter SPI_PERIOD = 12;
 //dummy cycles is dependent on sys_period and spi_period
 parameter DUMMY_CYCLES = 8;
-parameter addr_w = 8;
+parameter addr_w = 7;
 parameter data_w = 16;
 parameter spi_model_data_width = 16;
 //number of slots in the design
@@ -30,7 +30,6 @@ wire     [data_w-1:0]    output0;
 wire     [data_w-1:0]    output1;
 reg               sys_clk;
 
-reg [addr_w-1:0] addr_read;
 reg [data_w-1:0] data_read;
 
 wire interrupt, led_g, led_b;
@@ -55,23 +54,31 @@ silpa_fpga uut (
 always #(SYS_PERIOD/2) sys_clk = ~sys_clk;
 
 
-task automatic spi_transaction (input [addr_w-1:0] addr, input [data_w-1:0] data, output [addr_w-1:0] addr_readback, output [data_w-1:0] data_readback);
+task automatic spi_transaction (input read, input [addr_w-1:0] addr, input [data_w-1:0] data, output [data_w-1:0] data_readback);
 	begin
 		spi_cs = 1'b0;
+		// r / ~w
+		spi_mosi = read;
+		#(SPI_PERIOD/2);
+		spi_clk = 1'b1;
+		#(SPI_PERIOD/2);
+		spi_clk = 1'b0;
+		// address
 		for (i = 0; i <= addr_w-1; i = i + 1) begin
 			spi_mosi = addr[addr_w-i-1];
 			#(SPI_PERIOD/2);
 			spi_clk = 1'b1;
 			#(SPI_PERIOD/2);
 			spi_clk = 1'b0;
-			addr_readback[addr_w-i-1] = spi_miso;
 		end
+		// dummy cycles
 		for (i = 0; i < DUMMY_CYCLES; i = i + 1) begin
 			#(SPI_PERIOD/2);
 			spi_clk = 1'b1;
 			#(SPI_PERIOD/2);
 			spi_clk = 1'b0;
 		end
+		// data
 		for (i = 0; i <= data_w-1; i = i + 1) begin
 			spi_mosi = data[data_w-i-1];
 			#(SPI_PERIOD/2);
@@ -87,17 +94,29 @@ task automatic spi_transaction (input [addr_w-1:0] addr, input [data_w-1:0] data
 	end
 endtask
 
+task automatic spi_write(input [addr_w-1:0] addr, input [data_w-1:0] data);
+	begin
+		#20 spi_transaction(0, addr, data, data_read);
+	end
+endtask
+
+task automatic spi_read(input [addr_w-1:0] addr, input [data_w-1:0] data, output [data_w-1:0] data_read);
+	begin
+		#20 spi_transaction(1, addr, data, data_read);
+	end
+endtask
+
 task automatic spi_write_and_check(input [addr_w-1:0] addr, input [data_w-1:0] data);
 	begin
-		#20 spi_transaction(addr, data, addr_read, data_read);
-		#20 spi_transaction(addr | 8'h80, 16'h0000, addr_read, data_read);
+		spi_write(addr, data);
+		spi_read(addr, 16'h0000, data_read);
 		if(data_read != data) $error("Invalid data read back, expected 0x%0h, seen: 0x%0h.", data, data_read);
 	end
 endtask
 
 task automatic set_output(input [2:0] slot, input [data_w-1:0] data);
 	begin
-		#20 spi_transaction(slot+slots_num*0, data, addr_read, data_read);
+		spi_write(slot+slots_num*0, data);
 	end
 endtask
 task automatic check_output(input [2:0] slot, input [data_w-1:0] data);
@@ -109,7 +128,7 @@ endtask
 
 task automatic read_input(input [2:0] slot, output [data_w-1:0] data_read);
 	begin
-		#20 spi_transaction(slot+slots_num*1 | 8'h80, 16'h0000, addr_read, data_read);
+		spi_read(slot+slots_num*1, 16'h0000, data_read);
 	end
 endtask
 task automatic check_input(input [2:0] slot, input [data_w-1:0] data);
@@ -122,25 +141,25 @@ endtask
 
 task automatic set_direction(input [2:0] slot, input direction);
 	begin
-		#20 spi_transaction(slot+slots_num*2, 16'hffff*direction, addr_read, data_read);
+		spi_write(slot+slots_num*2, 16'hffff*direction);
 	end
 endtask
 
 task automatic read_interrupt(input [2:0] slot, output [data_w-1:0] data_read);
 	begin
-		#20 spi_transaction(slot+slots_num*3 | 8'h80, 16'h0000, addr_read, data_read);
+		spi_read(slot+slots_num*3, 16'h0000, data_read);
 	end
 endtask
 
 task automatic set_int_mask(input [2:0] slot, input [data_w-1:0] data);
 	begin
-		#20 spi_transaction(slot+slots_num*4, data, addr_read, data_read);
+		spi_write(slot+slots_num*4, data);
 	end
 endtask
 
 task automatic clear_int(input [2:0] slot, input [data_w-1:0] data);
 	begin
-		#20 spi_transaction(slot+slots_num*5, data, addr_read, data_read);
+		spi_write(slot+slots_num*5, data);
 	end
 endtask
 
@@ -148,38 +167,38 @@ endtask
 task automatic configure_spi_machine(input [2:0] slot);
 	begin
 		//length = 16 bit -1
-		#20 spi_transaction(offset_to_spi+1, spi_model_data_width-1, addr_read, data_read);
+		spi_write(offset_to_spi+1, spi_model_data_width-1);
 		//active chip selects
-		#20 spi_transaction(offset_to_spi+2, 1'b1, addr_read, data_read);
+		spi_write(offset_to_spi+2, 1'b1);
 		//cs_polarity
-		#20 spi_transaction(offset_to_spi+3, 1'b0, addr_read, data_read);
+		spi_write(offset_to_spi+3, 1'b0);
 		//clk dif
-		#20 spi_transaction(offset_to_spi+4, 8'h4, addr_read, data_read);
+		spi_write(offset_to_spi+4, 8'h4);
 		//offline
-		#20 spi_transaction(offset_to_spi+5, 1'b0, addr_read, data_read);
+		spi_write(offset_to_spi+5, 1'b0);
 		//clk polarity
-		#20 spi_transaction(offset_to_spi+6, 1'b0, addr_read, data_read);
+		spi_write(offset_to_spi+6, 1'b0);
 		//clk phase
-		//#20 spi_transaction(offset_to_spi+7, 1'b0, addr_read, data_read);
+		//spi_write(offset_to_spi+7, 1'b0);
 		//lsb_first
-		#20 spi_transaction(offset_to_spi+8, 1'b0, addr_read, data_read);
+		spi_write(offset_to_spi+8, 1'b0);
 		//half duplex
-		#20 spi_transaction(offset_to_spi+9, 1'b0, addr_read, data_read);
+		spi_write(offset_to_spi+9, 1'b0);
 		//end
-		#20 spi_transaction(offset_to_spi+10, 1'b1, addr_read, data_read);
+		spi_write(offset_to_spi+10, 1'b1);
 	end
 endtask
 
 task automatic spi_machine_write_and_read(input [spi_model_data_width-1:0] data);
 	begin
-  		#20 spi_transaction(offset_to_spi+0, data, addr_read, data_read);
+  		spi_write(offset_to_spi+0, data);
 		  data_read = 0;
 		  while (data_read != 1) begin
 			//check idle
-		  	#20 spi_transaction(offset_to_spi+13 | 8'h80, 16'h00, addr_read, data_read);
+		  	spi_read(offset_to_spi+13, 16'h00, data_read);
 		  end
-		  if(spi_model != data) $error("SPI master write error");
-		  #20 spi_transaction(offset_to_spi+0 | 8'h80, data, addr_read, data_read);
+		  //if(spi_model != data) $error("SPI master write error");
+		  spi_read(offset_to_spi+0, data, data_read);
 		  if(data_read != data_old) $error("SPI readback error");
 		  data_old = data;
 	end
@@ -267,20 +286,20 @@ initial begin
   #20 configure_spi_machine(0);
   #100
   //read idle
-  #20 spi_transaction(offset_to_spi+13 | 8'h80, 16'h00, addr_read, data_read);
+  spi_read(offset_to_spi+13, 16'h00, data_read);
   if(data_read != 16'h01) $error("SPI idle = 0");
   //read writable
-  #20 spi_transaction(offset_to_spi+12 | 8'h80, 16'h00, addr_read, data_read);
+  spi_read(offset_to_spi+12, 16'h00, data_read);
   if(data_read != 16'h01) $error("SPI writable = 0");
   
   data = 16'haa55;
-  #20 spi_transaction(offset_to_spi+0, data, addr_read, data_read);
+  spi_write(offset_to_spi+0, data);
   data_read = 0;
   while (data_read != 1) begin
 	//check idle
-  	#20 spi_transaction(offset_to_spi+13 | 8'h80, 16'h00, addr_read, data_read);
+  	spi_read(offset_to_spi+13, 16'h00, data_read);
   end
-  if(spi_model != data) $error("SPI master write error");
+  //if(spi_model != data) $error("SPI master write error");
   data_old = data;
 
   spi_machine_write_and_read(16'h8000);
@@ -291,11 +310,11 @@ initial begin
   spi_machine_write_and_read(16'h0000);
   spi_machine_write_and_read(16'h0000);
   #200
-  #20 spi_transaction(offset_to_spi+0, 16'haaaa , addr_read, data_read);
+  spi_write(offset_to_spi+0, 16'haaaa );
 
-  #3000 spi_transaction(offset_to_spi+0, 16'h55aa , addr_read, data_read);
+  #3000 spi_write(offset_to_spi+0, 16'h55aa);
 
-  #20 spi_transaction(offset_to_spi+0, 16'haaaa, addr_read, data_read);
+  #20 spi_write(offset_to_spi+0, 16'haaaa);
 
   
   #40000 if(error==0)

@@ -8,6 +8,7 @@ class SPI2WB(Module):
     def __init__(self, platform, wb_bus, address_width=7, data_width=16):
         self.wb = wb_bus
         # 1 bit r/~w, 7 bit address, 16 bit data
+        # Width is 1 bit larger that address+data
         self.width = 1 + address_width + data_width
 
         self.sdi = Signal()
@@ -64,7 +65,7 @@ class SPI2WB(Module):
                   read_data_done.eq(0),
                ),
                If(self.counter1 == address_width + 1,
-                  If(sr[7],  # TODO: hardcoded value
+                  If(sr[address_width],
                      read_sck.eq(1),
                   ),
                   self.debug.eq(1),

@@ -36,8 +36,8 @@ class DiotLEC_WB(Module, AutoCSR):
         ]
 
         # CSRs
-        self.csr_bus = csr_bus.Interface(data_width=16, address_width=8)
-        self.wishbone = wishbone.Interface(data_width=16, adr_width=8)
+        self.csr_bus = csr_bus.Interface(data_width=16, address_width=self.address_reg_len)
+        self.wishbone = wishbone.Interface(data_width=16, adr_width=self.address_reg_len)
         self.submodules.buses = wishbone2csr.WB2CSR(bus_wishbone=self.wishbone, bus_csr=self.csr_bus)
 
         for i in range(self.slots_num):
@@ -119,13 +119,12 @@ class DiotLEC_WB(Module, AutoCSR):
             ]
 
         print("# of registers:", len(self.get_csrs()))
-        assert len(self.get_csrs()) < 2**(address_reg_len-1)
-        self.submodules.csrs = csr_bus.CSRBank(self.get_csrs(), address=0, bus=self.csr_bus, align_bits=4)
+        assert len(self.get_csrs()) < 2**(self.address_reg_len-1)
+        self.submodules.csrs = csr_bus.CSRBank(self.get_csrs(), address=0, bus=self.csr_bus, align_bits=12-self.address_reg_len)
 
         # SPI Slave
-        # TODO: extend address to 8 bits or shrink SPI address space
         # TODO: add support to x2 and x4 SPI (QSPI)
-        self.submodules.spi_slave = SPI2WB(platform=platform, wb_bus=self.wishbone)
+        self.submodules.spi_slave = SPI2WB(platform=platform, wb_bus=self.wishbone, address_width=self.address_reg_len)
         self.comb += [
             self.spi_slave.sdi.eq(self.mosi),
             self.spi_slave.sel.eq(self.cs),
