@@ -15,7 +15,7 @@ parameter slots_num = 1;
 reg [30*8-1:0] textsignal;
 integer i;
 //registers before spi_register
-integer offset_to_spi=slots_num*6+2;
+integer offset_to_spi=slots_num*6;
 
 reg                rst;
 reg              spi_clk;

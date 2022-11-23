@@ -9,102 +9,71 @@ from SpiInterface import SPIInterface
 from spi2wb import SPI2WB
 
 
-class DiotLEC_WB(Module, AutoCSR):
-    def __init__(self, platform, address_reg_len=8, slots=8):
-        self.address_reg_len = address_reg_len
-        self.slots_num = slots
-        self.slot = [[] for _ in range(self.slots_num)]
-        for i in range(self.slots_num):
-            for j in range(16):
-                self.slot[i].append(TSTriple(name="slot{i}_{j}".format(i=i, j=j)))
-        self.io_interrupt = Signal(self.slots_num)
+class SlotController(Module, AutoCSR):
+    def __init__(self, platform):
+        self.slot = []
+        for j in range(16):
+            self.slot.append(TSTriple(name="slot_{j}".format(j=j)))
+        self.io_interrupt = Signal()
 
         # CSRs
-        for i in range(self.slots_num):
-            setattr(self, "output{}".format(i), CSRStorage(16, name="output{}".format(i)))
-        for i in range(self.slots_num):
-            setattr(self, "input{}".format(i), CSRStatus(16, name="input{}".format(i)))
-        for i in range(self.slots_num):
-            setattr(self, "oe{}".format(i), CSRStorage(16, name="oe{}".format(i)))
-        for i in range(self.slots_num):
-            setattr(self, "interrupt{}".format(i), CSRStatus(16, name="interrupt{}".format(i)))
-        for i in range(self.slots_num):
-            setattr(self, "interrupt_mask{}".format(i), CSRStorage(16, name="interrupt_mask{}".format(i)))
-        for i in range(self.slots_num):
-            setattr(self, "interrupt_clear{}".format(i), CSRStorage(16, name="interrupt_clear{}".format(i), write_from_dev=True))
-        self.id = CSRStatus(16)
-        self.id2 = CSRStatus(16)
+        self.output = CSRStorage(16)
+        self.input = CSRStatus(16)
+        self.oe = CSRStorage(16)
+        self.interrupt = CSRStatus(16)
+        self.interrupt_mask = CSRStorage(16)
+        self.interrupt_clear = CSRStorage(16, write_from_dev=True)
 
         # SPI masters
-        self.spi_master = []
-        spi_if_signals = []
-        for i in range(self.slots_num):
-            spi_interface = SPIInterface()
-            spi_master = SPIMaster(spi_interface, data_width=16, div_width=8)
-            setattr(self, "spi_master{}".format(i), spi_master)
-            self.spi_master.append(spi_master)
-            self.submodules += spi_master
-            spi_if_signals.append([spi_interface.mosi, spi_interface.miso, spi_interface.cs_spi, spi_interface.clk])
+        spi_interface = SPIInterface()
+        self.submodules.spi_master = SPIMaster(spi_interface, data_width=16, div_width=8)
+        spi_if_signals = [spi_interface.mosi, spi_interface.miso, spi_interface.cs_spi, spi_interface.clk]
 
-        for j in range(self.slots_num):
-            for i, spi_sig in enumerate(spi_if_signals[j]):
-                self.comb += [
-                    self.slot[j][i].o.eq(Mux(self.spi_master[j].offline.storage,
-                                            getattr(self, "output{}".format(j)).storage[i],
-                                            spi_sig.o)),  # If offline then use register value, else use spi interface
-                    getattr(self, "input{}".format(j)).status[i].eq(self.slot[j][i].i),
-                    spi_sig.i.eq(self.slot[j][i].i),
-                    self.slot[j][i].oe.eq(Mux(self.spi_master[j].offline.storage,
-                                              getattr(self, "oe{}".format(j)).storage[i],
-                                              spi_sig.oe))
-                ]
-            for i in range(4, 16):
-                self.comb += [
-                    self.slot[j][i].o.eq(getattr(self, "output{}".format(j)).storage[i]),
-                    getattr(self, "input{}".format(j)).status[i].eq(self.slot[j][i].i),
-                    self.slot[j][i].oe.eq(getattr(self, "oe{}".format(j)).storage[i]),
-                ]
-            self.comb += self.io_interrupt[0].eq(
-                reduce(or_, getattr(self, "interrupt{}".format(j)).status & getattr(self, "interrupt_mask{}".format(j)).storage))
-        self.comb += self.id.status.eq(0xaaaa)
-        self.comb += self.id2.status.eq(0x5555)
+        for i, spi_sig in enumerate(spi_if_signals):
+            self.comb += [
+                self.slot[i].o.eq(Mux(self.spi_master.offline.storage,
+                                        self.output.storage[i],
+                                        spi_sig.o)),  # If offline then use register value, else use spi interface
+                self.input.status[i].eq(self.slot[i].i),
+                spi_sig.i.eq(self.slot[i].i),
+                self.slot[i].oe.eq(Mux(self.spi_master.offline.storage,
+                                          self.oe.storage[i],
+                                          spi_sig.oe))
+            ]
+        for i in range(4, 16):
+            self.comb += [
+                self.slot[i].o.eq(self.output.storage[i]),
+                self.input.status[i].eq(self.slot[i].i),
+                self.slot[i].oe.eq(self.oe.storage[i]),
+            ]
+        self.comb += self.io_interrupt.eq(reduce(or_, self.interrupt.status & self.interrupt_mask.storage))
 
         # Interrupts
         # TODO: do not trigger interrupt on spi pins if spi is active
-        flat_input = [getattr(self, "input{}".format(i)).status[j] for i in range(self.slots_num) for j in range(16)]
-        flat_oe = [getattr(self, "oe{}".format(i)).storage[j] for i in range(self.slots_num) for j in range(16)]
-        flat_interrupt = [getattr(self, "interrupt{}".format(i)).status[j] for i in range(self.slots_num) for j in range(16)]
-        flat_interrupt_clear = [getattr(self, "interrupt_clear{}".format(i)).storage[j] for i in range(self.slots_num) for j in range(16)]
-        flat_interrupt_mask = [getattr(self, "interrupt_mask{}".format(i)).storage[j] for i in range(self.slots_num) for j in range(16)]
-        for (input, dir, interrupt, clear, mask) in zip(flat_input, flat_oe, flat_interrupt, flat_interrupt_clear,
-                                                        flat_interrupt_mask):
+        for i in range(16):
             edge = Signal(2)
             self.sync.sys += [
                 edge[1].eq(edge[0]),
-                edge[0].eq(input),
-                If((edge[0] ^ edge[1]) & (mask & (~dir)),
-                   interrupt.eq(1),
-                ).Elif(clear,
-                   interrupt.eq(0)
+                edge[0].eq(self.input.status[i]),
+                If((edge[0] ^ edge[1]) & (self.interrupt_mask.storage[i] & (~self.oe.storage[i])),
+                   self.interrupt.status[i].eq(1),
+                ).Elif(self.interrupt_clear.storage[i],
+                   self.interrupt.status[i].eq(0)
                 )
             ]
         # Clearing interrupt clear register
-        for i in range(self.slots_num):
-            self.sync.sys += [
-                getattr(self, "interrupt_clear{}".format(i)).dat_w.eq(0),
-                getattr(self, "interrupt_clear{}".format(i)).we.eq(0),
-                If(getattr(self, "interrupt_clear{}".format(i)).re,
-                    getattr(self, "interrupt_clear{}".format(i)).we.eq(1)
-                )
-            ]
+        self.sync.sys += [
+            self.interrupt_clear.dat_w.eq(0),
+            self.interrupt_clear.we.eq(0),
+            If(self.interrupt_clear.re,
+                self.interrupt_clear.we.eq(1)
+            )
+        ]
 
 
 class SilpaFPGA(Module, AutoCSR):
     def __init__(self, platform):
         self.reset = Signal()
-        self.mosi = Signal()
-        self.miso = Signal()
-        self.cs = Signal()
         self.spi_clk = Signal()
         self.specials += Instance("GSR", i_GSR=~ResetSignal() & self.reset, name="GSR_INST")
         self.specials += Instance("PUR", i_PUR=~ResetSignal(), name="PUR_INST")
@@ -115,7 +84,7 @@ class SilpaFPGA(Module, AutoCSR):
         self.clock_domains.cd_sck1 = ClockDomain("sck1", reset_less=True)
 
         self.comb += [
-            self.cd_sck0.clk.eq(~self.cd_sck1.clk),
+            self.cd_sck0.clk.eq(~self.spi_clk),
             self.cd_sck1.clk.eq(self.spi_clk)
         ]
 
@@ -124,41 +93,44 @@ class SilpaFPGA(Module, AutoCSR):
         self.wishbone = wishbone.Interface(data_width=16, adr_width=self.address_reg_len)
         self.submodules.buses = wishbone2csr.WB2CSR(bus_wishbone=self.wishbone, bus_csr=self.csr_bus)
 
-        self.logic = DiotLEC_WB(platform=platform, address_reg_len=self.address_reg_len, slots=1)
+        self.logic = SlotController(platform=platform)
         self.submodules += self.logic
+
+        self.id = CSRStatus(16)
+        self.id2 = CSRStatus(16)
+        self.comb += self.id.status.eq(0xaaaa)
+        self.comb += self.id2.status.eq(0x5555)
 
         self.submodules.csrs = csr_bus.CSRBank(self.get_csrs(), address=0, bus=self.csr_bus,
                                                align_bits=12 - self.address_reg_len)
         print("# of registers:", len(self.get_csrs()))
         assert len(self.get_csrs()) < 2 ** (self.address_reg_len - 1)
+
         # SPI Slave
         # TODO: add support to x2 and x4 SPI (QSPI)
+        spi = platform.request("spi", 0)
         self.submodules.spi_slave = SPI2WB(platform=platform, wb_bus=self.wishbone, address_width=self.address_reg_len)
         self.comb += [
-            self.spi_slave.sdi.eq(self.mosi),
-            self.spi_slave.sel.eq(self.cs),
-            self.miso.eq(self.spi_slave.sdo)
+            self.spi_slave.sdi.eq(spi.mosi),
+            self.spi_slave.sel.eq(~spi.cs_n),
+            spi.miso.eq(self.spi_slave.sdo),
+            self.spi_clk.eq(spi.clk)
         ]
 
-        for slot in [self.logic.slot[0]]:
-            io = platform.request("slot")
-            for i, triple in enumerate(slot):
-                self.specials += triple.get_tristate(io[i])
+        # for slot in [self.logic.slot[0]]:
+        io = platform.request("slot")
+        for i, triple in enumerate(self.logic.slot):
+            self.specials += triple.get_tristate(io[i])
 
         self.r_led = platform.request("user_led")
         self.g_led = platform.request("user_led")
         self.b_led = platform.request("user_led")
         self.button = platform.request("usr_btn")
 
-        spi = platform.request("spi", 0)
         self.comb += [
-            self.mosi.eq(spi.mosi),
-            spi.miso.eq(self.miso),
-            self.cs.eq(~spi.cs_n),
-            self.spi_clk.eq(spi.clk),
             self.cd_sys.clk.eq(platform.request("clk48", 0)),
             self.r_led.eq(self.logic.io_interrupt[0]),
-            self.g_led.eq(self.logic.slot[0][0].o),
+            self.g_led.eq(self.logic.slot[0].o),
             self.reset.eq(self.button),
         ]
 
