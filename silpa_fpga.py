@@ -11,35 +11,15 @@ from spi2wb import SPI2WB
 
 class DiotLEC_WB(Module, AutoCSR):
     def __init__(self, platform, address_reg_len=8, slots=8):
-
         self.address_reg_len = address_reg_len
         self.slots_num = slots
-
-        self.mosi = Signal()
-        self.miso = Signal()
-        self.cs = Signal()
-        self.spi_clk = Signal()
         self.slot = [[] for _ in range(self.slots_num)]
         for i in range(self.slots_num):
             for j in range(16):
                 self.slot[i].append(TSTriple(name="slot{i}_{j}".format(i=i, j=j)))
         self.io_interrupt = Signal(self.slots_num)
 
-        # Clocks
-        self.clock_domains.cd_sys = ClockDomain("sys")
-        self.clock_domains.cd_sck0 = ClockDomain("sck0", reset_less=True)
-        self.clock_domains.cd_sck1 = ClockDomain("sck1", reset_less=True)
-
-        self.comb += [
-            self.cd_sck0.clk.eq(~self.cd_sck1.clk),
-            self.cd_sck1.clk.eq(self.spi_clk)
-        ]
-
         # CSRs
-        self.csr_bus = csr_bus.Interface(data_width=16, address_width=self.address_reg_len)
-        self.wishbone = wishbone.Interface(data_width=16, adr_width=self.address_reg_len)
-        self.submodules.buses = wishbone2csr.WB2CSR(bus_wishbone=self.wishbone, bus_csr=self.csr_bus)
-
         for i in range(self.slots_num):
             setattr(self, "output{}".format(i), CSRStorage(16, name="output{}".format(i)))
         for i in range(self.slots_num):
@@ -118,10 +98,39 @@ class DiotLEC_WB(Module, AutoCSR):
                 )
             ]
 
-        print("# of registers:", len(self.get_csrs()))
-        assert len(self.get_csrs()) < 2**(self.address_reg_len-1)
-        self.submodules.csrs = csr_bus.CSRBank(self.get_csrs(), address=0, bus=self.csr_bus, align_bits=12-self.address_reg_len)
 
+class SilpaFPGA(Module, AutoCSR):
+    def __init__(self, platform):
+        self.reset = Signal()
+        self.mosi = Signal()
+        self.miso = Signal()
+        self.cs = Signal()
+        self.spi_clk = Signal()
+        self.specials += Instance("GSR", i_GSR=~ResetSignal() & self.reset, name="GSR_INST")
+        self.specials += Instance("PUR", i_PUR=~ResetSignal(), name="PUR_INST")
+
+        # Clocks
+        self.clock_domains.cd_sys = ClockDomain("sys")
+        self.clock_domains.cd_sck0 = ClockDomain("sck0", reset_less=True)
+        self.clock_domains.cd_sck1 = ClockDomain("sck1", reset_less=True)
+
+        self.comb += [
+            self.cd_sck0.clk.eq(~self.cd_sck1.clk),
+            self.cd_sck1.clk.eq(self.spi_clk)
+        ]
+
+        self.address_reg_len = 7
+        self.csr_bus = csr_bus.Interface(data_width=16, address_width=self.address_reg_len)
+        self.wishbone = wishbone.Interface(data_width=16, adr_width=self.address_reg_len)
+        self.submodules.buses = wishbone2csr.WB2CSR(bus_wishbone=self.wishbone, bus_csr=self.csr_bus)
+
+        self.logic = DiotLEC_WB(platform=platform, address_reg_len=self.address_reg_len, slots=1)
+        self.submodules += self.logic
+
+        self.submodules.csrs = csr_bus.CSRBank(self.get_csrs(), address=0, bus=self.csr_bus,
+                                               align_bits=12 - self.address_reg_len)
+        print("# of registers:", len(self.get_csrs()))
+        assert len(self.get_csrs()) < 2 ** (self.address_reg_len - 1)
         # SPI Slave
         # TODO: add support to x2 and x4 SPI (QSPI)
         self.submodules.spi_slave = SPI2WB(platform=platform, wb_bus=self.wishbone, address_width=self.address_reg_len)
@@ -130,18 +139,6 @@ class DiotLEC_WB(Module, AutoCSR):
             self.spi_slave.sel.eq(self.cs),
             self.miso.eq(self.spi_slave.sdo)
         ]
-
-
-class SilpaFPGA(Module):
-    def __init__(self, platform):
-        self.reset = Signal()
-        self.specials += Instance("GSR", i_GSR=~ResetSignal() & self.reset, name="GSR_INST")
-        self.specials += Instance("PUR", i_PUR=~ResetSignal(), name="PUR_INST")
-
-        self.clock_domains.cd_sys = ClockDomain("sys")
-
-        self.logic = DiotLEC_WB(platform=platform, address_reg_len=7, slots=1)
-        self.submodules += self.logic
 
         for slot in [self.logic.slot[0]]:
             io = platform.request("slot")
@@ -155,10 +152,10 @@ class SilpaFPGA(Module):
 
         spi = platform.request("spi", 0)
         self.comb += [
-            self.logic.mosi.eq(spi.mosi),
-            spi.miso.eq(self.logic.miso),
-            self.logic.cs.eq(~spi.cs_n),
-            self.logic.spi_clk.eq(spi.clk),
+            self.mosi.eq(spi.mosi),
+            spi.miso.eq(self.miso),
+            self.cs.eq(~spi.cs_n),
+            self.spi_clk.eq(spi.clk),
             self.cd_sys.clk.eq(platform.request("clk48", 0)),
             self.r_led.eq(self.logic.io_interrupt[0]),
             self.g_led.eq(self.logic.slot[0][0].o),
