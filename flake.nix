@@ -118,6 +118,7 @@
           pkgs.nextpnr
           pkgs.trellis
           pkgs.dfu-util
+          pkgs.openocd
         ];
       };
       

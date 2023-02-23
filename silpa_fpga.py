@@ -1,5 +1,5 @@
 from migen import *
-from misoc.interconnect.csr import *
+# from misoc.interconnect.csr import *
 from misoc.interconnect import wishbone, csr_bus, wishbone2csr
 from functools import reduce
 from operator import or_
@@ -73,20 +73,29 @@ class SlotController(Module, AutoCSR):
 
 class SilpaFPGA(Module, AutoCSR):
     def __init__(self, platform):
-        self.reset = Signal()
+        # self.reset = Signal()
         self.spi_clk = Signal()
-        self.specials += Instance("GSR", i_GSR=~ResetSignal() & self.reset, name="GSR_INST")
+        self.specials += Instance("GSR", i_GSR=~ResetSignal(), name="GSR_INST")
+        # self.specials += Instance("GSR", i_GSR=~ResetSignal() & self.reset, name="GSR_INST")
         self.specials += Instance("PUR", i_PUR=~ResetSignal(), name="PUR_INST")
 
         # Clocks
         self.clock_domains.cd_sys = ClockDomain("sys")
+        self.clock_domains.cd_sys100 = ClockDomain("sys100")
         self.clock_domains.cd_sck0 = ClockDomain("sck0", reset_less=True)
         self.clock_domains.cd_sck1 = ClockDomain("sck1", reset_less=True)
 
+        # clk50 = Signal()
+        # divider_clk = Signal(2)
+        # self.sync.sys100 += divider_clk.eq(divider_clk+1)
+        # self.comb += clk50.eq(divider_clk[0])
         self.comb += [
+            self.cd_sys.clk.eq(platform.request("clk100")),
+            # self.cd_sys.clk.eq(clk50),
             self.cd_sck0.clk.eq(~self.spi_clk),
             self.cd_sck1.clk.eq(self.spi_clk)
         ]
+        platform.add_period_constraint(platform.lookup_request("clk100", loose=True), 10)
 
         self.address_reg_len = 7
         self.csr_bus = csr_bus.Interface(data_width=16, address_width=self.address_reg_len)
@@ -108,7 +117,7 @@ class SilpaFPGA(Module, AutoCSR):
 
         # SPI Slave
         # TODO: add support to x2 and x4 SPI (QSPI)
-        spi = platform.request("spi", 0)
+        spi = platform.request("qspix1", 0)
         self.submodules.spi_slave = SPI2WB(platform=platform, wb_bus=self.wishbone, address_width=self.address_reg_len)
         self.comb += [
             self.spi_slave.sdi.eq(spi.mosi),
@@ -118,32 +127,45 @@ class SilpaFPGA(Module, AutoCSR):
         ]
 
         # for slot in [self.logic.slot[0]]:
-        io = platform.request("slot")
-        for i, triple in enumerate(self.logic.slot):
-            self.specials += triple.get_tristate(io[i])
+        # io = platform.request("slot").flatten()
+        # print(io)
+        # TODO implement triple support for differential signals - use just simple I/O buffers and maybe synthesiser handles the rest?
+        # for i, triple in enumerate(self.logic.slot):
+        #     if i >= 8:
+        #         break
+        #     self.specials += triple.get_tristate(io[i * 2])
+        # for i in range(8):
+        #     self.specials += self.logic.slot[i].get_tristate(io[i])
 
-        self.r_led = platform.request("user_led")
-        self.g_led = platform.request("user_led")
-        self.b_led = platform.request("user_led")
-        self.button = platform.request("usr_btn")
 
-        self.comb += [
-            self.cd_sys.clk.eq(platform.request("clk48", 0)),
-            self.r_led.eq(self.logic.io_interrupt[0]),
-            self.g_led.eq(self.logic.slot[0].o),
-            self.reset.eq(self.button),
-        ]
 
-        counter = Signal(24)
-        self.sync += [
-            counter.eq(counter+1),
-            If(counter == 0,
-               self.b_led.eq(~self.b_led))
-        ]
         # platform.add_period_constraint(self.cd_sys.clk, 20.83)
         platform.add_period_constraint(spi.clk, 20)
-        # platform.request("GPIO", 0)
 
+        dio = platform.request("dio")
+        dio_oen = platform.request("dio_oen")
+        self.comb += dio_oen.eq(0b0000)
+        sig_list = [self.spi_slave.counter1[0], self.logic.slot[0].o, ClockSignal("sck1"), self.spi_slave.sel]
+        for i, sig in enumerate(sig_list):
+            # self.comb += dio[i].eq(self.logic.slot[i].o)
+            # self.comb += dio[i].eq(self.cd_sys.clk)
+            self.comb += dio[i].eq(sig)
+            # self.comb += dio[i].eq(self.spi_slave.di[i])
+
+
+from stm_sys_board import _connector_constraints
+from litex.build.generic_platform import *
+def handle_connector_mess(slot_num):
+    extension = [
+        ("slot", slot_num) + tuple([
+            Subsignal("d{}_{}".format(j, p),
+                      Pins("slot{}:d{}_{}".format(slot_num, j, p)),
+                      IOStandard("LVDS" if _connector_constraints[slot_num][2][j] else "LVDS"))
+            for j in range(8 if slot_num not in [3, 4] else 16) for p in "p"])
+
+    ]
+    return(extension)
+#IOStandard("LVDS25E" if _connector_constraints[slot_num][2][j] else "LVDS"))
 
 from migen.fhdl.module import Module
 from migen.fhdl.bitcontainer import value_bits_sign
@@ -166,12 +188,14 @@ class LatticeECP5TrellisTristateDiamond(Module):
 
 
 if __name__ == "__main__":
-    from gsd_orangecrab import Platform
-    platform = Platform(device="85F")
+    from stm_sys_board import Platform
+    platform = Platform()
+    # platform.add_extension(handle_connector_mess(6))
+    # print(platform.constraint_manager.available)
     silpa_fpga = SilpaFPGA(platform)
 
     from migen.fhdl.specials import Tristate
-    sim = True
+    sim = False
     so = {}
     if sim:
         so = {Tristate: LatticeECP5TrellisTristateDiamond}
