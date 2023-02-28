@@ -1,5 +1,4 @@
 from migen import *
-# from misoc.interconnect.csr import *
 from misoc.interconnect import wishbone, csr_bus, wishbone2csr
 from functools import reduce
 from operator import or_
@@ -7,6 +6,7 @@ from misoc.interconnect.csr import CSRStatus, CSRStorage, AutoCSR
 from misoc.cores.spi2 import SPIMaster
 from SpiInterface import SPIInterface
 from spi2wb import SPI2WB
+from stm_sys_board import constraints_dict
 
 
 class SlotController(Module, AutoCSR):
@@ -73,10 +73,8 @@ class SlotController(Module, AutoCSR):
 
 class SilpaFPGA(Module, AutoCSR):
     def __init__(self, platform):
-        # self.reset = Signal()
         self.spi_clk = Signal()
         self.specials += Instance("GSR", i_GSR=~ResetSignal(), name="GSR_INST")
-        # self.specials += Instance("GSR", i_GSR=~ResetSignal() & self.reset, name="GSR_INST")
         self.specials += Instance("PUR", i_PUR=~ResetSignal(), name="PUR_INST")
 
         # Clocks
@@ -85,13 +83,8 @@ class SilpaFPGA(Module, AutoCSR):
         self.clock_domains.cd_sck0 = ClockDomain("sck0", reset_less=True)
         self.clock_domains.cd_sck1 = ClockDomain("sck1", reset_less=True)
 
-        # clk50 = Signal()
-        # divider_clk = Signal(2)
-        # self.sync.sys100 += divider_clk.eq(divider_clk+1)
-        # self.comb += clk50.eq(divider_clk[0])
         self.comb += [
             self.cd_sys.clk.eq(platform.request("clk100")),
-            # self.cd_sys.clk.eq(clk50),
             self.cd_sck0.clk.eq(~self.spi_clk),
             self.cd_sck1.clk.eq(self.spi_clk)
         ]
@@ -104,6 +97,8 @@ class SilpaFPGA(Module, AutoCSR):
 
         self.logic = SlotController(platform=platform)
         self.submodules += self.logic
+        self.logic2 = SlotController(platform=platform)
+        self.submodules += self.logic2
 
         self.id = CSRStatus(16)
         self.id2 = CSRStatus(16)
@@ -126,21 +121,19 @@ class SilpaFPGA(Module, AutoCSR):
             self.spi_clk.eq(spi.clk)
         ]
 
-        # for slot in [self.logic.slot[0]]:
-        # io = platform.request("slot").flatten()
-        # print(io)
-        # TODO implement triple support for differential signals - use just simple I/O buffers and maybe synthesiser handles the rest?
-        # for i, triple in enumerate(self.logic.slot):
-        #     if i >= 8:
-        #         break
-        #     self.specials += triple.get_tristate(io[i * 2])
-        # for i in range(8):
-        #     self.specials += self.logic.slot[i].get_tristate(io[i])
+        connector_num = 1
+        silpa_outputs = [0, 1, 3, 6, 7]
+        platform.add_extension(handle_connector_mess(connector_num, silpa_outputs))
+        io = platform.request("slot{}".format(connector_num)).flatten()
+        self.connect_extension(self.logic.slot, io, silpa_outputs, connector_num)
 
+        connector_num = 5
+        hvsup_outputs = [0, 1, 3, 4, 5]
+        platform.add_extension(handle_connector_mess(connector_num, hvsup_outputs))
+        io = platform.request("slot{}".format(connector_num)).flatten()
+        self.connect_extension(self.logic2.slot, io, hvsup_outputs, connector_num)
 
-
-        # platform.add_period_constraint(self.cd_sys.clk, 20.83)
-        platform.add_period_constraint(spi.clk, 20)
+        platform.add_period_constraint(spi.clk, 1000/133)
 
         dio = platform.request("dio")
         dio_oen = platform.request("dio_oen")
@@ -152,20 +145,35 @@ class SilpaFPGA(Module, AutoCSR):
             self.comb += dio[i].eq(sig)
             # self.comb += dio[i].eq(self.spi_slave.di[i])
 
+    def connect_extension(self, internal_signals, external_signals, outputs, connector_num):
+        for i in range(8):
+            triple = internal_signals[i]
+            sig = external_signals[i]
+            constraint = constraints_dict["slot{}".format(connector_num)][i]
+            if constraint[0] == 2.5:  # sanity check
+                if not constraint[1]:
+                    # Full I/O
+                    self.specials += triple.get_tristate(sig)
+                elif i in outputs:
+                    # Only output
+                    self.comb += sig.eq(triple.o)
+                else:
+                    # Only input
+                    self.comb += triple.i.eq(sig)
 
-from stm_sys_board import _connector_constraints
+
+from stm_sys_board import constraints_dict
 from litex.build.generic_platform import *
-def handle_connector_mess(slot_num):
+def handle_connector_mess(slot_num, outputs):
+    slot = "slot{}".format(slot_num)
     extension = [
-        ("slot", slot_num) + tuple([
-            Subsignal("d{}_{}".format(j, p),
-                      Pins("slot{}:d{}_{}".format(slot_num, j, p)),
-                      IOStandard("LVDS" if _connector_constraints[slot_num][2][j] else "LVDS"))
-            for j in range(8 if slot_num not in [3, 4] else 16) for p in "p"])
-
+        (slot, 0) + tuple([
+            Subsignal("d{}_p".format(i),
+                      Pins("{}:d{}_p".format(slot, i)),
+                      IOStandard("LVDS25E" if constraint[1] and i in outputs else "LVDS"))
+            for i, constraint in enumerate(constraints_dict[slot]) if constraint[0] == 2.5])
     ]
     return(extension)
-#IOStandard("LVDS25E" if _connector_constraints[slot_num][2][j] else "LVDS"))
 
 from migen.fhdl.module import Module
 from migen.fhdl.bitcontainer import value_bits_sign
@@ -190,8 +198,6 @@ class LatticeECP5TrellisTristateDiamond(Module):
 if __name__ == "__main__":
     from stm_sys_board import Platform
     platform = Platform()
-    # platform.add_extension(handle_connector_mess(6))
-    # print(platform.constraint_manager.available)
     silpa_fpga = SilpaFPGA(platform)
 
     from migen.fhdl.specials import Tristate

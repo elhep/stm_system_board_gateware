@@ -276,26 +276,51 @@ _connectors_bp = [
     }
      ),
 ]
+# due to bugs in PCB, 3.3 V signals cannot be used at all
+# signals with external termination must use LVDS if input and LVDS25E if output, inout is not possible
 # name, i/o voltage, external termination
 _connector_constraints = [
     ("slot1", [2.5]*8,
         [True]*7 + [False]*1),
-    ("slot2", [2.5]*6 + [3.3]*2 + [2.5]*8,
-        [False]*2 + [True]*2 + [False]*4 + [True]*2 + [False]*2 + [True]*2 + [False]*2),
-    # TODO: Can top and bottom be LVDS inputs at all? Or even differential at all
-    ("slot3", [2.5]*6 + [3.3]*4 + [2.5]*6 + [3.3]*8 + [2.5]*2 + [3.3]*4 + [2.5]*2,
-        [False]*30 + [True]*2),
-    ("slot4", [2.5]*6 + [3.3]*2 + [2.5]*24,
-        [False]*2 + [True]*2 + [False]*4 + [True]*4 + [False]*6 + [True]*2 + [False]*2 + [True]*2 + [False]*4 + [True]*4),
-    ("slot5", [2.5]*16,
-        [False]*8 + [True]*2 + [False]*2 + [True]*2 + [False]*2),
-    ("slot6", [2.5]*2 + [3.3]*2 + [2.5]*2 + [3.3]*2 + [2.5]*8,
-        [True]*1 + [False]*3 + [True]*4),
-    ("slot7", [2.5]*12 + [3.3]*2 + [2.5]*2,
-        [False]*2 + [True]*2 + [False]*2 + [True]*4 + [False]*6),
-    ("slot8", [2.5]*2 + [3.3]*2 + [2.5]*6 + [3.3]*2 + [2.5]*2 + [3.3]*2,
-        [True]*2 + [False]*4 + [True]*4 + [False]*2 + [True]*2 + [False]*2)
+    ("slot2", [2.5]*3 + [3.3] + [2.5]*4,
+        [False, True] + [False]*2 + [True, False]*2),
+    ("slot3", [2.5]*3 + [3.3]*2 + [2.5]*3 + [3.3]*4 + [2.5] + [3.3]*2 + [2.5],
+        [False]*15 + [True]),
+    ("slot4", [2.5]*3 + [3.3] + [2.5]*12,
+        [False, True] + [False]*2 + [True]*2 + [False]*3 + [True, False, True] + [False]*2 + [True]*2),
+    ("slot5", [2.5]*8,
+        [False]*4 + [True, False]*2),
+    ("slot6", [2.5, 3.3]*2 + [2.5]*4,
+        [True] + [False]*3 + [True]*4),
+    ("slot7", [2.5]*6 + [3.3, 2.5],
+        [False, True]*2 + [True] + [False]*3),
+    ("slot8", [2.5, 3.3] + [2.5]*3 + [3.3, 2.5, 3.3],
+        [True] + [False]*2 + [True]*2 + [False, True, False])
 ]
+constraints_dict = {slot[0]: [(slot[1][i], slot[2][i]) for i in range(len(slot[1]))] for slot in _connector_constraints}
+
+def print_compatibility_table():
+    print("| Signal\\Slot |", end="")
+    for i in range(1, 9):
+        print("\t{} |".format(i), end="")
+    print("")
+    for i in range(9):
+        print(" | -----".format(i), end="")
+    print(" |")
+    for i in range(16):
+        print("| {}\t |".format(i), end="")
+        for j in range(1, 9):
+            if j not in [3, 4] and i > 7:
+                print("\t |", end="")
+                continue
+            signal = constraints_dict["slot{}".format(j)][i]
+            if signal[0] == 3.3:
+                print("\t❌️ |", end="")
+            elif signal[1]:
+                print("\t☑️ |", end="")
+            else:
+                print("\t✅️ |", end="")
+        print("")
 
 class Platform(LatticePlatform):
     default_clk_name   = "clk100"
