@@ -108,6 +108,20 @@
         doCheck = false;
 #        propagatedBuildInputs = with pkgs.python3Packages; [ migen litex ];
       };
+
+
+    openocd-ecp5 = pkgs.openocd.overrideAttrs(oa: {
+          version = "unstable-2021-09-15";
+          src = pkgs.fetchFromGitHub {
+            owner = "openocd-org";
+            repo = "openocd";
+            rev = "a0bd3c9924870c3b8f428648410181040dabc33c";
+            sha256 = "sha256-YgUsl4/FohfsOncM4uiz/3c6g2ZN4oZ0y5vV/2Skwqg=";
+            fetchSubmodules = true;
+          };
+          patches = [ ./openocd-jtagspi-ecp5.patch ];
+          nativeBuildInputs = oa.nativeBuildInputs or [] ++ [ pkgs.autoreconfHook269 ];
+        });
       
     in {
       devShell.x86_64-linux = pkgs.mkShell {
@@ -118,7 +132,7 @@
           pkgs.nextpnr
           pkgs.trellis
           pkgs.dfu-util
-          pkgs.openocd
+          openocd-ecp5
         ];
       };
       

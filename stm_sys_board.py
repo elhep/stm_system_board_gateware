@@ -1,6 +1,6 @@
 from litex.build.generic_platform import *
 from litex.build.lattice import LatticePlatform
-from litex.build.dfu import DFUProg
+from litex.build.lattice.programmer import OpenOCDJTAGProgrammer
 
 _io = [
     ("clk100", 0, Pins("A24"), IOStandard("LVCMOS33")),
@@ -339,6 +339,9 @@ class Platform(LatticePlatform):
         self.add_platform_command("SYSCONFIG MASTER_SPI_PORT=ENABLE;")
         self.add_platform_command("SYSCONFIG SLAVE_PARALLEL_PORT=DISABLE;")
         self.add_platform_command("SYSCONFIG MCCLK_FREQ=9.7;")
+
+    def create_programmer(self):
+        return OpenOCDJTAGProgrammer(config="stm_sys_board.cfg", flash_proxy_basename="bscan_spi_lfe5u85f_custom.svf")
 
     def do_finalize(self, fragment):
         LatticePlatform.do_finalize(self, fragment)

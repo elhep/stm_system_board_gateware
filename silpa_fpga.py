@@ -6,11 +6,10 @@ from misoc.interconnect.csr import CSRStatus, CSRStorage, AutoCSR
 from misoc.cores.spi2 import SPIMaster
 from SpiInterface import SPIInterface
 from spi2wb import SPI2WB
-from stm_sys_board import constraints_dict
 
 
 class SlotController(Module, AutoCSR):
-    def __init__(self, platform):
+    def __init__(self):
         self.slot = []
         for j in range(16):
             self.slot.append(TSTriple(name="slot_{j}".format(j=j)))
@@ -95,9 +94,9 @@ class SilpaFPGA(Module, AutoCSR):
         self.wishbone = wishbone.Interface(data_width=16, adr_width=self.address_reg_len)
         self.submodules.buses = wishbone2csr.WB2CSR(bus_wishbone=self.wishbone, bus_csr=self.csr_bus)
 
-        self.logic = SlotController(platform=platform)
+        self.logic = SlotController()
         self.submodules += self.logic
-        self.logic2 = SlotController(platform=platform)
+        self.logic2 = SlotController()
         self.submodules += self.logic2
 
         self.id = CSRStatus(16)
@@ -135,15 +134,13 @@ class SilpaFPGA(Module, AutoCSR):
 
         platform.add_period_constraint(spi.clk, 1000/133)
 
+        # DIO used for debug
         dio = platform.request("dio")
         dio_oen = platform.request("dio_oen")
         self.comb += dio_oen.eq(0b0000)
-        sig_list = [self.spi_slave.counter1[0], self.logic.slot[0].o, ClockSignal("sck1"), self.spi_slave.sel]
+        sig_list = [self.logic.slot[0].o, spi.cs_n, self.logic.slot[2].o, self.logic.slot[3].o]
         for i, sig in enumerate(sig_list):
-            # self.comb += dio[i].eq(self.logic.slot[i].o)
-            # self.comb += dio[i].eq(self.cd_sys.clk)
             self.comb += dio[i].eq(sig)
-            # self.comb += dio[i].eq(self.spi_slave.di[i])
 
     def connect_extension(self, internal_signals, external_signals, outputs, connector_num):
         for i in range(8):
