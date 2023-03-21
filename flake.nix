@@ -82,20 +82,6 @@
         doCheck = false;
       };
 
-#      litex-boards = pkgs.python3Packages.buildPythonPackage {
-#        pname = "litex-boards";
-#        version = "2021.12";
-#        src = pkgs.fetchFromGitHub {
-#          owner = "litex-hub";
-#          repo = "litex-boards";
-#          rev = "9ad1723ac11b9338cd76f47f3d84146b00ea0788";
-#          sha256 = "1ckqh321n8mk0787lml9gr29wngmww7mp0cn4f7ga0lp1nsafbxw";
-#        };
-#        propagatedBuildInputs = with pkgs.python3Packages; [ migen litex ];
-#        doCheck = false;
-#        patches = [ ./lit-boards.patch ];
-#      };
-
       pythondata-software-compiler_rt = pkgs.python3Packages.buildPythonPackage {
         pname = "pythondata-software-compiler_rt";
         version = "2020.11";
@@ -106,7 +92,6 @@
           sha256 = "06pz4zs8wizx1yp5sv07l9gs71brlr4c8jrxszp0jq7h2g35zyxk";
         };
         doCheck = false;
-#        propagatedBuildInputs = with pkgs.python3Packages; [ migen litex ];
       };
 
 

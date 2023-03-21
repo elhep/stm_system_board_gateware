@@ -90,11 +90,13 @@ class SPI2WB(Module):
             self.di.eq(sr),
         ]
         wb_trans_done = Signal()
+        spi_trans_done_blocker = Signal()
         self.sync.sys += [
             If(self.sel,
-                wb_trans_done.eq(0)
+               wb_trans_done.eq(0),
+               spi_trans_done_blocker.eq(0)
             ),
-            If(~read_data_done & ~self.sel,
+            If(~read_data_done & ~self.sel & ~spi_trans_done_blocker,
                spi_trans_done.eq(1)
             ),
             If(read_data_valid_ack_wb,
@@ -105,6 +107,7 @@ class SPI2WB(Module):
                self.wb.stb.eq(0),
                self.wb.we.eq(0),
                spi_trans_done.eq(0),
+               spi_trans_done_blocker.eq(1),
                If(~self.wb.we,
                   read_data_wb.eq(self.wb.dat_r),
                   read_data_valid_wb.eq(1)
@@ -122,6 +125,7 @@ class SPI2WB(Module):
                self.wb.cyc.eq(1),
                self.wb.stb.eq(1),
                spi_trans_done.eq(0),
+               spi_trans_done_blocker.eq(1),
                wb_trans_done.eq(1)
             )
         ]
