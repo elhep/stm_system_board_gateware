@@ -70,7 +70,7 @@ class SlotController(Module, AutoCSR):
         ]
 
 
-class SilpaFPGA(Module, AutoCSR):
+class STMSysBoard(Module, AutoCSR):
     def __init__(self, platform):
         self.spi_clk = Signal()
         self.specials += Instance("GSR", i_GSR=~ResetSignal(), name="GSR_INST")
@@ -195,11 +195,11 @@ class LatticeECP5TrellisTristateDiamond(Module):
 if __name__ == "__main__":
     from stm_sys_board import Platform
     platform = Platform()
-    silpa_fpga = SilpaFPGA(platform)
+    stm_sys_board = STMSysBoard(platform)
 
     from migen.fhdl.specials import Tristate
     sim = False
     so = {}
     if sim:
         so = {Tristate: LatticeECP5TrellisTristateDiamond}
-    platform.build(silpa_fpga, build_name="silpa_fpga", run=not sim, special_overrides=so)
+    platform.build(stm_sys_board, build_name="stm_sys_board", run=not sim, special_overrides=so)

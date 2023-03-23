@@ -345,4 +345,3 @@ class Platform(LatticePlatform):
 
     def do_finalize(self, fragment):
         LatticePlatform.do_finalize(self, fragment)
-

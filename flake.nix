@@ -1,5 +1,5 @@
 {
-  description = "Silpa controller HDL project";
+  description = "STM System board controller HDL project";
   
   inputs = {
     nixpkgs.url = github:NixOS/nixpkgs/nixos-21.11;
@@ -29,18 +29,6 @@
         propagatedBuildInputs = [ pkgs.python3Packages.pyserial ];
       };
       
-      microscope = pkgs.python3Packages.buildPythonPackage rec {
-        pname = "microscope";
-        version = "unstable-2020-12-28";
-        src = pkgs.fetchFromGitHub {
-          owner = "m-labs";
-          repo = "microscope";
-          rev = "c21afe7a53258f05bde57e5ebf2e2761f3d495e4";
-          sha256 = "sha256-jzyiLRuEf7p8LdhmZvOQj/dyQx8eUE8p6uRlwoiT8vg=";
-        };
-        propagatedBuildInputs = with pkgs.python3Packages; [ pyserial prettytable msgpack migen ];
-      };
-      
       misoc = pkgs.python3Packages.buildPythonPackage {
         name = "misoc";
         src = src-misoc;
@@ -48,23 +36,24 @@
         propagatedBuildInputs = with pkgs.python3Packages; [ jinja2 numpy migen pyserial asyncserial ];
       };
 
-      silpa-hdl = pkgs.stdenv.mkDerivation {
-        name = "silpa-hdl";
+      stm_sys_board-hdl = pkgs.stdenv.mkDerivation {
+        name = "stm_sys_board-hdl";
         phases = [ "buildPhase" "installPhase" ];
         src = self;
         buildInputs = [
-         (pkgs.python3.withPackages(f: [ migen misoc microscope litex ]))
+         (pkgs.python3.withPackages(f: [ migen misoc litex ]))
           pkgs.yosys
           pkgs.nextpnr
           pkgs.trellis
         ];
         buildPhase = ''
-        python $src/silpa_fpga.py
+        python $src/stm_sys_board_hdl.py
         '';
 
         installPhase = ''
         mkdir -p $out
-        mv ./build/silpa_fpga.bit $out/silpa_fpga.bit
+        mv ./build/stm_sys_board.bit $out/stm_sys_board.bit
+        mv ./build/stm_sys_board.svf $out/stm_sys_board.svf
         '';
 
       };
@@ -94,7 +83,6 @@
         doCheck = false;
       };
 
-
     openocd-ecp5 = pkgs.openocd.overrideAttrs(oa: {
           version = "unstable-2021-09-15";
           src = pkgs.fetchFromGitHub {
@@ -110,18 +98,17 @@
       
     in {
       devShell.x86_64-linux = pkgs.mkShell {
-        name = "silpa-hdl-dev-shell";
+        name = "stm_sys_board-hdl-dev-shell";
         buildInputs = [
-         (pkgs.python3.withPackages(f: [ migen misoc microscope litex ]))
+         (pkgs.python3.withPackages(f: [ migen misoc litex ]))
           pkgs.yosys
           pkgs.nextpnr
           pkgs.trellis
-          pkgs.dfu-util
           openocd-ecp5
         ];
       };
       
-      defaultPackage.x86_64-linux = silpa-hdl;
+      defaultPackage.x86_64-linux = stm_sys_board-hdl;
     };
       
   
