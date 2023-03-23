@@ -119,18 +119,22 @@ class STMSysBoard(Module, AutoCSR):
             spi.miso.eq(self.spi_slave.sdo),
             self.spi_clk.eq(spi.clk)
         ]
+        spi_sig = platform.request("spi_slave", 1)
+        interrupts = [spi_sig.mosi, spi_sig.miso, spi_sig.clk, spi_sig.cs]
 
         connector_num = 1
         silpa_outputs = [0, 1, 3, 6, 7]
         platform.add_extension(handle_connector_mess(connector_num, silpa_outputs))
         io = platform.request("slot{}".format(connector_num)).flatten()
-        self.connect_extension(self.logic.slot, io, silpa_outputs, connector_num)
+        interrupt = interrupts[0]
+        self.connect_extension(self.logic, io, silpa_outputs, interrupt, connector_num)
 
         connector_num = 5
         hvsup_outputs = [0, 1, 3, 4, 5]
         platform.add_extension(handle_connector_mess(connector_num, hvsup_outputs))
         io = platform.request("slot{}".format(connector_num)).flatten()
-        self.connect_extension(self.logic2.slot, io, hvsup_outputs, connector_num)
+        interrupt = interrupts[1]
+        self.connect_extension(self.logic2, io, hvsup_outputs, interrupt, connector_num)
 
         platform.add_period_constraint(spi.clk, 1000/133)
 
@@ -138,12 +142,15 @@ class STMSysBoard(Module, AutoCSR):
         dio = platform.request("dio")
         dio_oen = platform.request("dio_oen")
         self.comb += dio_oen.eq(0b0000)
-        sig_list = [self.logic.slot[0].o, spi.cs_n, self.logic.slot[2].o, self.logic.slot[3].o]
+        sig_list = [self.logic.slot[0].o, self.logic.slot[1].i, self.logic.slot[2].o, self.logic.slot[3].o]
         for i, sig in enumerate(sig_list):
             self.comb += dio[i].eq(sig)
 
-    def connect_extension(self, internal_signals, external_signals, outputs, connector_num):
+    def connect_extension(self, slot_controller, external_signals, outputs, external_interrupt, connector_num):
         for i in range(8):
+            internal_signals = slot_controller.slot
+            internal_interrupt = slot_controller.io_interrupt
+            self.comb += external_interrupt.eq(internal_interrupt)
             triple = internal_signals[i]
             sig = external_signals[i]
             constraint = constraints_dict["slot{}".format(connector_num)][i]
