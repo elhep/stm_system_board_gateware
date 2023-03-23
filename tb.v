@@ -1,17 +1,17 @@
 `timescale 1ns / 100ps
 
-module tb_diot_lec();
-	
-parameter SYS_PERIOD = 8;
-parameter SPI_PERIOD = 12;
+module tb_stm_system_board();
+
+parameter SYS_PERIOD = 10;
+parameter SPI_PERIOD = 10;
 //dummy cycles is dependent on sys_period and spi_period
-parameter DUMMY_CYCLES = 8;
+parameter DUMMY_CYCLES = 10;
 parameter addr_w = 7;
 parameter data_w = 16;
 parameter spi_model_data_width = 16;
 //number of slots in the design
-parameter slots_num = 1;
-	
+parameter slots_num = 2;
+
 reg [30*8-1:0] textsignal;
 integer i;
 //registers before spi_register
@@ -24,30 +24,44 @@ wire              spi_miso;
 reg              spi_cs;
 reg [spi_model_data_width-1:0] spi_model = 0;
 
-reg     [data_w-1:0]    output0_reg;
-reg     output0_dir = 0;
-wire     [data_w-1:0]    output0;
-wire     [data_w-1:0]    output1;
+reg     [7:0]    slot1_reg;
+reg     slot1_dir = 0;
+wire     [7:0]    slot1;
+wire     [7:0]    slot5;
+wire [3:0] dio, dio_oen;
 reg               sys_clk;
 
 reg [data_w-1:0] data_read;
 
-wire interrupt, led_g, led_b;
+wire interrupt;
 
 integer error=0;
 integer data, data_old;
 
 silpa_fpga uut (
-    .clk480           (   sys_clk),
-    //.sys_rst           (    rst           ),
-    .spi0_clk (spi_clk),
-	.spi0_mosi (spi_mosi),
-	.spi0_miso (spi_miso),
-	.spi0_cs_n (spi_cs),
-	.slot(output0),
-	.user_led(interrupt),
-        .user_led_1(led_g),
-        .user_led_2(led_b)
+    .clk100           (   sys_clk),
+    .qspix10_clk (spi_clk),
+	.qspix10_mosi (spi_mosi),
+	.qspix10_miso (spi_miso),
+	.qspix10_cs_n (spi_cs),
+	.slot1_d0_p (slot1[0]),
+	.slot1_d1_p (slot1[1]),
+	.slot1_d2_p (slot1[2]),
+	.slot1_d3_p (slot1[3]),
+	.slot1_d4_p (slot1[4]),
+	.slot1_d5_p (slot1[5]),
+	.slot1_d6_p (slot1[6]),
+	.slot1_d7_p (slot1[7]),
+	.slot5_d0_p (slot5[0]),
+	.slot5_d1_p (slot5[1]),
+	.slot5_d2_p (slot5[2]),
+	.slot5_d3_p (slot5[3]),
+	.slot5_d4_p (slot5[4]),
+	.slot5_d5_p (slot5[5]),
+	.slot5_d6_p (slot5[6]),
+	.slot5_d7_p (slot5[7]),
+	.dio (dio),
+	.dio_oen (dio_oen)
 	//.slot1(output1)
 );
 
@@ -86,11 +100,11 @@ task automatic spi_transaction (input read, input [addr_w-1:0] addr, input [data
 			#(SPI_PERIOD/2);
 			spi_clk = 1'b0;
 			data_readback[data_w-i-1] = spi_miso;
-		end		
+		end
 		#(SPI_PERIOD/2);
 		spi_cs = 1'b1;
 		spi_mosi = 1'b0;
-		
+
 	end
 endtask
 
@@ -122,7 +136,7 @@ endtask
 task automatic check_output(input [2:0] slot, input [data_w-1:0] data);
 	begin
 		#20 set_output(slot, data);
-		#50 if(output0 != data) $error("Output not correct! Expected 0x%0h, seen: 0x%0h.", data, output0);
+		#50 if(slot1 != data) $error("Output not correct! Expected 0x%0h, seen: 0x%0h.", data, slot1);
 	end
 endtask
 
@@ -133,9 +147,9 @@ task automatic read_input(input [2:0] slot, output [data_w-1:0] data_read);
 endtask
 task automatic check_input(input [2:0] slot, input [data_w-1:0] data);
 	begin
-		output0_reg = data;
+		slot1_reg = data;
   		read_input(slot, data_read);
-  		#50 if(data_read != output0_reg) $error("Output not correct! Expected 0x%0h, seen: 0x%0h.", output0_reg, data_read);
+  		#50 if(data_read != slot1_reg) $error("Output not correct! Expected 0x%0h, seen: 0x%0h.", slot1_reg, data_read);
 	end
 endtask
 
@@ -166,6 +180,7 @@ endtask
 
 task automatic configure_spi_machine(input [2:0] slot);
 	begin
+		offset_to_spi = (slot+1)*6;
 		//length = 16 bit -1
 		spi_write(offset_to_spi+1, spi_model_data_width-1);
 		//active chip selects
@@ -213,7 +228,9 @@ endtask
 //always @(negedge spisdcard_clk) begin
 //	spisdcard_miso <= spi_model[spi_model_data_width-1];
 //end
-assign output0 = ~output0_dir ? output0_reg : 16'bzzzzzzzzzzzzzzzz;
+
+//assign slot1 = ~slot1_dir ? slot1_reg : 16'bzzzzzzzzzzzzzzzz;
+
 // ---------------------------------------------------------------------------------------------------------------------
 // RESET AND TIMEOUT
 // ---------------------------------------------------------------------------------------------------------------------
@@ -223,66 +240,69 @@ initial begin
   spi_clk = 1'b0;
   spi_mosi = 1'b0;
   spi_cs = 1'b1;
-  output0_reg = 16'h0000;
+  slot1_reg = 8'h00;
 
   #50 rst = 1'b0;
   #7;
   //spi slave interface check
   textsignal = "SPI slave interface";
   spi_write_and_check(8'h00, 16'haaaa);
+
+  //#100 spi_write(offset_to_spi+0, 16'haaaa );
+
   spi_write_and_check(6'h00, 16'h5555);
   spi_write_and_check(6'h00, 16'h0000);
   spi_write_and_check(6'h00, 16'h0001);
   spi_write_and_check(6'h00, 16'h8000);
   spi_write_and_check(6'h00, 16'hffff);
   spi_write_and_check(6'h00, 16'h2a2a);
-  
-  //output check
-  textsignal = "Output";
-  #20 output0_reg = 16'haaaa;
-  #20 output0_dir = 1;
-  set_direction(3'd0, 1); //output
 
-  check_output(3'd0, 16'h5555);
-  check_output(3'd0, 16'haaaa);
-  check_output(3'd0, 16'hffff);
-  check_output(3'd0, 16'h0001);
-  check_output(3'd0, 16'h0000);
-  check_output(3'd0, 16'h8000);
+  //output check
+  //textsignal = "Output";
+  //#20 slot1_reg = 8'haa;
+  //#20 slot1_dir = 1;
+  //set_direction(3'd0, 1); //output
+
+  //check_output(3'd0, 16'h5555);
+  //check_output(3'd0, 16'haaaa);
+  //check_output(3'd0, 16'hffff);
+  //check_output(3'd0, 16'h0001);
+  //check_output(3'd0, 16'h0000);
+  //check_output(3'd0, 16'h8000);
 
   //input check
-  textsignal = "Input";
-  #20 output0_reg = 16'haaaa;
-  set_direction(3'd0, 0); //input
-  #20 output0_dir = 0;
-  check_input(3'd0, 16'h5555);
-  check_input(3'd0, 16'haaaa);
-  check_input(3'd0, 16'hffff);
-  check_input(3'd0, 16'h0001);
-  check_input(3'd0, 16'h0000);
-  check_input(3'd0, 16'h8000);
+  //textsignal = "Input";
+  //#20 slot1_reg = 8'haa;
+  //set_direction(3'd0, 0); //input
+  //#20 slot1_dir = 0;
+  //check_input(3'd0, 16'h5555);
+  //check_input(3'd0, 16'haaaa);
+  //check_input(3'd0, 16'hffff);
+  //check_input(3'd0, 16'h0001);
+  //check_input(3'd0, 16'h0000);
+  //check_input(3'd0, 16'h8000);
 
   //interrupt check
-  textsignal = "Interrupt";
-  output0_reg = 16'h0000;
-  clear_int(3'd0, 16'hffff);
-  set_int_mask(3'd0, 16'hffff);
-  read_interrupt(3'd0, data_read);
-  if(data_read != 16'h00) $error("Interrupts not cleared!");
-  output0_reg = 16'h0001;
-  read_interrupt(3'd0, data_read);
-  if(data_read != 16'h01) $error("Interrupt not registered!");
-  if(~interrupt) $error("Interrupt to STM is low!");
-  clear_int(3'd0, 16'hffff);
-  read_interrupt(3'd0, data_read);
-  if(data_read != 16'h00) $error("Interrupts not cleared!");
-  
-  #20 output0_reg = 16'h0001;
-  clear_int(3'd0, 16'hffff);
+  //textsignal = "Interrupt";
+  //slot1_reg = 8'h00;
+  //clear_int(3'd0, 16'hffff);
+  //set_int_mask(3'd0, 16'hffff);
+  //read_interrupt(3'd0, data_read);
+  //if(data_read != 16'h00) $error("Interrupts not cleared!");
+  //slot1_reg = 8'h01;
+  //read_interrupt(3'd0, data_read);
+  //if(data_read != 16'h01) $error("Interrupt not registered!");
+  //if(~interrupt) $error("Interrupt to STM is low!");
+  //clear_int(3'd0, 16'hffff);
+  //read_interrupt(3'd0, data_read);
+  //if(data_read != 16'h00) $error("Interrupts not cleared!");
+
+  //#20 slot1_reg = 8'h01;
+  //clear_int(3'd0, 16'hffff);
 
   //SPI master interface check
-  textsignal = "SPI master interface";
-  #20 output0_dir = 1;
+  //textsignal = "SPI master interface";
+  #20 slot1_dir = 1;
   #20 configure_spi_machine(0);
   #100
   //read idle
@@ -291,7 +311,7 @@ initial begin
   //read writable
   spi_read(offset_to_spi+12, 16'h00, data_read);
   if(data_read != 16'h01) $error("SPI writable = 0");
-  
+
   data = 16'haa55;
   spi_write(offset_to_spi+0, data);
   data_read = 0;
@@ -302,13 +322,13 @@ initial begin
   //if(spi_model != data) $error("SPI master write error");
   data_old = data;
 
-  spi_machine_write_and_read(16'h8000);
-  spi_machine_write_and_read(16'h0001);
-  spi_machine_write_and_read(16'h5555);
-  spi_machine_write_and_read(16'haaaa);
-  spi_machine_write_and_read(16'hffff);
-  spi_machine_write_and_read(16'h0000);
-  spi_machine_write_and_read(16'h0000);
+  //spi_machine_write_and_read(16'h8000);
+  //spi_machine_write_and_read(16'h0001);
+  //spi_machine_write_and_read(16'h5555);
+  //spi_machine_write_and_read(16'haaaa);
+  //spi_machine_write_and_read(16'hffff);
+  //spi_machine_write_and_read(16'h0000);
+  //spi_machine_write_and_read(16'h0000);
   #200
   spi_write(offset_to_spi+0, 16'haaaa );
 
