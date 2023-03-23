@@ -2,37 +2,46 @@
   description = "STM System board controller HDL project";
   
   inputs = {
-    nixpkgs.url = github:NixOS/nixpkgs/nixos-21.11;
-    src-migen = { url = github:m-labs/migen; flake = false; };
-    src-misoc = { type = "git"; url = "https://github.com/m-labs/misoc.git"; submodules = true; flake = false; };
+    nixpkgs.url = github:NixOS/nixpkgs/nixos-22.11;
   };
 
-  outputs = { self, nixpkgs, src-migen, src-misoc }: 
+  outputs = { self, nixpkgs }:
     let
       pkgs = nixpkgs.legacyPackages.x86_64-linux;
       
       migen = pkgs.python3Packages.buildPythonPackage rec {
         name = "migen";
-        src = src-migen;
+        src = pkgs.fetchFromGitHub {
+          owner = "m-labs";
+          repo = "migen";
+          rev = "ccaee68e14d3636e1d8fb2e0864dd89b1b1f7384";
+          sha256 = "sha256-oYdeY0MbTReKbAwmSznnqw0wNawdInJoFJVWW3tesFA=";
+        };
         propagatedBuildInputs = [ pkgs.python3Packages.colorama ];
       };
       
       asyncserial = pkgs.python3Packages.buildPythonPackage rec {
         pname = "asyncserial";
-        version = "0.1";
+        version = "22-06-10";
         src = pkgs.fetchFromGitHub {
           owner = "m-labs";
           repo = "asyncserial";
-          rev = "d95bc1d6c791b0e9785935d2f62f628eb5cdf98d";
-          sha256 = "0yzkka9jk3612v8gx748x6ziwykq5lr7zmr9wzkcls0v2yilqx9k";
+          rev = "446559fec892a556876b17d17f182ae9647d5952";
+          sha256 = "sha256-WExmgh55sTH2w7wV3i96J1F1FN7L5rX3L/Ayvt2Kw/g=";
         };
         propagatedBuildInputs = [ pkgs.python3Packages.pyserial ];
       };
       
       misoc = pkgs.python3Packages.buildPythonPackage {
         name = "misoc";
-        src = src-misoc;
-        doCheck = false;
+        src = pkgs.fetchFromGitHub {
+          owner = "m-labs";
+          repo = "misoc";
+          rev = "26f039f9f6931a20a04ccd0f0a5402f67f553916";
+          sha256 = "sha256-nGrtMofRk33RRpzBkXpXGDyH5Z+jm5TdEas30r4gNLY=";
+          fetchSubmodules = true;
+        };
+#        doCheck = false;
         propagatedBuildInputs = with pkgs.python3Packages; [ jinja2 numpy migen pyserial asyncserial ];
       };
 

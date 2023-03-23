@@ -38,7 +38,7 @@ wire interrupt;
 integer error=0;
 integer data, data_old;
 
-silpa_fpga uut (
+stm_sys_board uut (
     .clk100           (   sys_clk),
     .qspix10_clk (spi_clk),
 	.qspix10_mosi (spi_mosi),
