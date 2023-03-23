@@ -38,7 +38,7 @@
           owner = "m-labs";
           repo = "misoc";
           rev = "26f039f9f6931a20a04ccd0f0a5402f67f553916";
-          sha256 = "sha256-nGrtMofRk33RRpzBkXpXGDyH5Z+jm5TdEas30r4gNLY=";
+          sha256 = "sha256-50w0K2E2ympYrG1Tte/HVbsp4FS2U+yohqZByXTOo4I=";
           fetchSubmodules = true;
         };
 #        doCheck = false;
