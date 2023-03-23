@@ -1,3 +1,17 @@
+### Build
+
+- Install [Nix package manager](https://nixos.org/download.html)
+- [Enable flakes](https://nixos.wiki/wiki/Flakes)
+- `nix build` to build project in sandbox (bitstream and svf will be in "output" folder)
+- `nix develop` and `python stm_sys_board_hdl.py ` to build project in nix environment (outputs will be in "build" folder)
+
+### Flash
+
+- Build the project
+- Enter nix environment: `nix develop`
+- `python load.py` to temporarily load bitstream
+- `./flash.sh` to write bitstream to flash memory
+
 ### Register map
 
 | Address   | Name                                                         | R/W  |
@@ -27,3 +41,11 @@
 | 0x28      | ID1 = 0xaaaa                                                 | R    |
 | 0x29      | ID2 = 0x5555                                                 | R    |
 
+### Measured SPI delays
+
+- 5 MHz SPI CLK -> 4 dummy cycles
+- 10 MHz SPI CLK -> 4 dummy cycles
+- 25 MHz SPI CLK -> 5 dummy cycles
+- 50 MHz SPI CLK -> 7 dummy cycles
+- 100 MHz SPI CLK -> 11 dummy cycles
+- 133 MHz SPI CLK (max STM speed) -> 11 dummy cycles
