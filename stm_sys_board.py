@@ -281,21 +281,21 @@ _connectors_bp = [
 # name, i/o voltage, external termination
 _connector_constraints = [
     ("slot1", [2.5]*8,
-        [True]*7 + [False]*1),
-    ("slot2", [2.5]*3 + [3.3] + [2.5]*4,
-        [False, True] + [False]*2 + [True, False]*2),
-    ("slot3", [2.5]*3 + [3.3]*2 + [2.5]*3 + [3.3]*4 + [2.5] + [3.3]*2 + [2.5],
-        [False]*15 + [True]),
-    ("slot4", [2.5]*3 + [3.3] + [2.5]*12,
-        [False, True] + [False]*2 + [True]*2 + [False]*3 + [True, False, True] + [False]*2 + [True]*2),
+        [True]*2 + [False, True] + [False]*4),
+    ("slot2", [2.5]*8,
+        [True]*2 + [False, True] + [False]*4),
+    ("slot3", [2.5]*8,
+        [True]*2 + [False, True] + [False]*4),
+    ("slot4", [2.5]*8,
+        [True]*2 + [False, True] + [False]*4),
     ("slot5", [2.5]*8,
-        [False]*4 + [True, False]*2),
-    ("slot6", [2.5, 3.3]*2 + [2.5]*4,
-        [True] + [False]*3 + [True]*4),
-    ("slot7", [2.5]*6 + [3.3, 2.5],
-        [False, True]*2 + [True] + [False]*3),
-    ("slot8", [2.5, 3.3] + [2.5]*3 + [3.3, 2.5, 3.3],
-        [True] + [False]*2 + [True]*2 + [False, True, False])
+        [True]*2 + [False, True] + [False]*4),
+    ("slot6", [2.5]*8,
+        [True]*2 + [False, True] + [False]*4),
+    ("slot7", [2.5]*16,
+        [True]*2 + [False, True] + [False]*4 + [True]*8),
+    ("slot8", [2.5]*16,
+        [True]*2 + [False, True] + [False]*4 + [True]*8)
 ]
 constraints_dict = {slot[0]: [(slot[1][i], slot[2][i]) for i in range(len(slot[1]))] for slot in _connector_constraints}
 
@@ -329,16 +329,11 @@ class Platform(LatticePlatform):
     def __init__(self, toolchain="trellis", **kwargs):
         LatticePlatform.__init__(self, "LFE5U-85F-6BG554C", _io, _connectors_bp, toolchain=toolchain, **kwargs)
         banks = [0, 1, 2, 3, 4, 6, 7, 8]
-        voltages = [3.3, 3.3, 3.3, 2.5, 3.3, 2.5, 2.5, 3.3]
+        voltages = [3.3, 3.3, 2.5, 2.5, 3.3, 2.5, 2.5, 3.3]
         for i, v in zip(banks, voltages):
             self.add_platform_command("BANK {} VCCIO {};".format(i, v))
         self.add_platform_command("VOLTAGE 1.1V;")
-        self.add_platform_command("SYSCONFIG COMPRESS_CONFIG=ON;")
-        self.add_platform_command("SYSCONFIG CONFIG_IOVOLTAGE=3.3;")
-        self.add_platform_command("SYSCONFIG SLAVE_SPI_PORT=DISABLE;")
-        self.add_platform_command("SYSCONFIG MASTER_SPI_PORT=ENABLE;")
-        self.add_platform_command("SYSCONFIG SLAVE_PARALLEL_PORT=DISABLE;")
-        self.add_platform_command("SYSCONFIG MCCLK_FREQ=9.7;")
+        self.add_platform_command("SYSCONFIG COMPRESS_CONFIG=ON CONFIG_IOVOLTAGE=3.3 SLAVE_SPI_PORT=DISABLE MASTER_SPI_PORT=ENABLE SLAVE_PARALLEL_PORT=DISABLE MCCLK_FREQ=9.7;")
 
     def create_programmer(self):
         return OpenOCDJTAGProgrammer(config="stm_sys_board.cfg", flash_proxy_basename="bscan_spi_lfe5u85f_custom.svf")
