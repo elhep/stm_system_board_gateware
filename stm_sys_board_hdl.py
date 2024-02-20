@@ -129,6 +129,9 @@ class STMSysBoard(Module, AutoCSR):
             silpa_outputs = [0, 1, 3, 6, 7]
             platform.add_extension(handle_connector_mess(connector_num, silpa_outputs))
             io = platform.request("slot{}".format(connector_num)).flatten()
+            if len(io) == 8:
+                sig = platform.request("slot_mlvds", connector_num)
+                io += [sig[j] for j in range(len(sig))]
             interrupt = interrupts[i]
             self.connect_extension(getattr(self, "logic{}".format(i)), io, silpa_outputs, interrupt, connector_num)
 
@@ -145,10 +148,10 @@ class STMSysBoard(Module, AutoCSR):
             self.comb += dio[i].eq(sig)
 
     def connect_extension(self, slot_controller, external_signals, outputs, external_interrupt, connector_num):
+        internal_interrupt = slot_controller.io_interrupt
+        internal_signals = slot_controller.slot
+        self.comb += external_interrupt.eq(internal_interrupt)
         for i in range(len(external_signals)):
-            internal_signals = slot_controller.slot
-            internal_interrupt = slot_controller.io_interrupt
-            self.comb += external_interrupt.eq(internal_interrupt)
             triple = internal_signals[i]
             sig = external_signals[i]
             constraint = constraints_dict["slot{}".format(connector_num)][i]
@@ -162,6 +165,9 @@ class STMSysBoard(Module, AutoCSR):
                 else:
                     # Only input
                     self.comb += triple.i.eq(sig)
+            elif constraint[0] == 3.3:
+                # SE signal connected to MLVDS transceiver
+                self.specials += triple.get_tristate(sig)
 
 
 from stm_sys_board import constraints_dict

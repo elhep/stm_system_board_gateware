@@ -276,22 +276,22 @@ _connectors_bp = [
     }
      ),
 ]
-# due to bugs in PCB, 3.3 V signals cannot be used at all
+
 # signals with external termination must use LVDS if input and LVDS25E if output, inout is not possible
 # name, i/o voltage, external termination
 _connector_constraints = [
-    ("slot1", [2.5]*8,
-        [True]*2 + [False, True] + [False]*4),
-    ("slot2", [2.5]*8,
-        [True]*2 + [False, True] + [False]*4),
-    ("slot3", [2.5]*8,
-        [True]*2 + [False, True] + [False]*4),
-    ("slot4", [2.5]*8,
-        [True]*2 + [False, True] + [False]*4),
-    ("slot5", [2.5]*8,
-        [True]*2 + [False, True] + [False]*4),
-    ("slot6", [2.5]*8,
-        [True]*2 + [False, True] + [False]*4),
+    ("slot1", [2.5]*8 + [3.3]*8,
+        [True]*2 + [False, True] + [False]*4 + [False]*8),
+    ("slot2", [2.5]*8 + [3.3]*8,
+        [True]*2 + [False, True] + [False]*4 + [False]*8),
+    ("slot3", [2.5]*8 + [3.3]*8,
+        [True]*2 + [False, True] + [False]*4 + [False]*8),
+    ("slot4", [2.5]*8 + [3.3]*8,
+        [True]*2 + [False, True] + [False]*4 + [False]*8),
+    ("slot5", [2.5]*8 + [3.3]*8,
+        [True]*2 + [False, True] + [False]*4 + [False]*8),
+    ("slot6", [2.5]*8 + [3.3]*8,
+        [True]*2 + [False, True] + [False]*4 + [False]*8),
     ("slot7", [2.5]*16,
         [True]*2 + [False, True] + [False]*4 + [True]*8),
     ("slot8", [2.5]*16,
