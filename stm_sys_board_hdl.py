@@ -78,7 +78,6 @@ class STMSysBoard(Module, AutoCSR):
 
         # Clocks
         self.clock_domains.cd_sys = ClockDomain("sys")
-        self.clock_domains.cd_sys100 = ClockDomain("sys100")
         self.clock_domains.cd_sck0 = ClockDomain("sck0", reset_less=True)
         self.clock_domains.cd_sck1 = ClockDomain("sck1", reset_less=True)
 
@@ -119,10 +118,14 @@ class STMSysBoard(Module, AutoCSR):
             spi.miso.eq(self.spi_slave.sdo),
             self.spi_clk.eq(spi.clk)
         ]
-        spi_sig = platform.request("spi_slave", 1).flatten()
+        platform.add_period_constraint(spi.clk, 1000/133)
+        # spi_sig = platform.request("spi_slave", 1).flatten()
+        spi_sig = platform.request("dio")
         interrupts = spi_sig
-        spi_sig = platform.request("spi_slave", 2).flatten()
-        interrupts += spi_sig
+        # spi_sig = platform.request("spi_slave", 2).flatten()
+        spi_sig = platform.request("dio_oen")
+        # interrupts += spi_sig
+        interrupts = Cat(interrupts, spi_sig)
 
         for i in range(8):
             connector_num = i+1
@@ -130,22 +133,42 @@ class STMSysBoard(Module, AutoCSR):
             platform.add_extension(handle_connector_mess(connector_num, silpa_outputs))
             io = platform.request("slot{}".format(connector_num)).flatten()
             if len(io) == 8:
-                sig = platform.request("slot_mlvds", connector_num)
-                io += [sig[j] for j in range(len(sig))]
+                mlvds = platform.request("slot_mlvds", connector_num)
+                io += [mlvds[j] for j in range(len(mlvds))]
             interrupt = interrupts[i]
             self.connect_extension(getattr(self, "logic{}".format(i)), io, silpa_outputs, interrupt, connector_num)
 
         # hvsup_outputs = [0, 1, 3, 4, 5]
 
-        platform.add_period_constraint(spi.clk, 1000/133)
+        
 
         # DIO used for debug
-        dio = platform.request("dio")
-        dio_oen = platform.request("dio_oen")
-        self.comb += dio_oen.eq(0b0000)
-        sig_list = [self.logic0.slot[0].o, self.logic0.slot[1].i, self.logic0.slot[2].o, self.logic0.slot[3].o]
-        for i, sig in enumerate(sig_list):
-            self.comb += dio[i].eq(sig)
+        # dio = platform.request("dio")
+        # dio_oen = platform.request("dio_oen")
+        # self.comb += dio_oen.eq(0b0000)
+        # sig_list = [self.logic0.slot[0].o, self.logic0.slot[1].i, self.logic0.slot[2].o, self.logic0.slot[3].o]
+        # for i, sig in enumerate(sig_list):
+        #     self.comb += dio[i].eq(sig)
+
+        # Code to place all other  possible clock inputs to verify pinout
+        # SPI buses with clock input
+        for i in range(1,7):
+            spis = platform.request("spi_slave", i)
+            spi_clk_domain = "cd_spi{}".format(i)
+            setattr(self.clock_domains, spi_clk_domain, ClockDomain("spi{}".format(i), reset_less=True))
+            self.comb += [
+                getattr(self, spi_clk_domain).clk.eq(spis.clk),
+                spis.cs.eq(1)
+            ]
+            getattr(self.sync, "spi{}".format(i)).__iadd__([
+                spis.mosi.eq(spis.miso)
+            ])
+        clk_stm = platform.request("clk_stm")
+        self.clock_domains.cd_stm = ClockDomain("stm")
+        self.comb += self.cd_stm.clk.eq(clk_stm)
+        fsen = platform.request("fsen")
+        self.sync.stm += fsen.eq(~fsen)
+
 
     def connect_extension(self, slot_controller, external_signals, outputs, external_interrupt, connector_num):
         internal_interrupt = slot_controller.io_interrupt
@@ -155,7 +178,7 @@ class STMSysBoard(Module, AutoCSR):
             triple = internal_signals[i]
             sig = external_signals[i]
             constraint = constraints_dict["slot{}".format(connector_num)][i]
-            if constraint[0] == 2.5:  # sanity check
+            if constraint[0] == 2.5:
                 if not constraint[1]:
                     # Full I/O
                     self.specials += triple.get_tristate(sig)
@@ -209,7 +232,7 @@ if __name__ == "__main__":
     stm_sys_board = STMSysBoard(platform)
 
     from migen.fhdl.specials import Tristate
-    sim = True
+    sim = False
     so = {}
     if sim:
         so = {Tristate: LatticeECP5TrellisTristateDiamond}
