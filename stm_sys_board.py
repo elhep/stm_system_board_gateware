@@ -6,20 +6,20 @@ _io = [
     ("clk100", 0, Pins("A24"), IOStandard("LVCMOS33")),
     ("clk_stm", 0, Pins("A2"), IOStandard("LVCMOS33")),
 
-    ("dio", 0, Pins("AD25 AF25 AE25 AE26"), IOStandard("LVCMOS33")),
-    ("dio_oen", 0, Pins("AD26 AB26 AC26 AA26"), IOStandard("LVCMOS33")),
+    ("dio", 0, Pins("AE26 AE25 AD25 AD26"), IOStandard("LVCMOS33")),
+    ("dio_oen", 0, Pins("AC26 AB26 AB25 AA26"), IOStandard("LVCMOS33")),
 
     ("qspix4", 0,
-        Subsignal("clk", Pins("A12")),
-        Subsignal("data", Pins("AA23 AA24 AB24 AB25")),
-        Subsignal("cs_n", Pins("AA22")),
+        Subsignal("clk", Pins("E11")),
+        Subsignal("data", Pins("AB24 AA24 AA23 AA22")),
+        Subsignal("cs_n", Pins("AF25")),
         IOStandard("LVCMOS33")
     ),
     ("qspix1", 0,
-        Subsignal("clk", Pins("A12")),
-        Subsignal("mosi", Pins("AA23")),
+        Subsignal("clk", Pins("E11")),
+        Subsignal("mosi", Pins("AB24")),
         Subsignal("miso", Pins("AA24")),
-        Subsignal("cs_n", Pins("AA22")),
+        Subsignal("cs_n", Pins("AF25")),
         IOStandard("LVCMOS33")
     ),
 
@@ -33,61 +33,61 @@ _io = [
     ("spi_dir_ctrl", 0,
         Subsignal("mosi", Pins("AB3")),
         Subsignal("miso", Pins("AD3")),
-        Subsignal("clk", Pins("C16")),
-        Subsignal("cs", Pins("A15")),
+        Subsignal("clk", Pins("A25")),
+        Subsignal("cs", Pins("A23")),
         IOStandard("LVCMOS33")
     ),
-    ("fsen", 0, Pins("C14"), IOStandard("LVCMOS33")),
+    ("fsen", 0, Pins("B19"), IOStandard("LVCMOS33")),
 
     ("spi_slave", 1,
-        Subsignal("mosi", Pins("E17")),
+        Subsignal("mosi", Pins("E19")),
         Subsignal("miso", Pins("E16")),
         Subsignal("clk", Pins("C13")),
-        Subsignal("cs", Pins("D14")),
+        Subsignal("cs", Pins("D21")),
         IOStandard("LVCMOS33")
     ),
     ("spi_slave", 2,
-        Subsignal("mosi", Pins("D9")),
-        Subsignal("miso", Pins("E10")),
-        Subsignal("clk", Pins("E13")),
-        Subsignal("cs", Pins("AB1")),
+        Subsignal("mosi", Pins("AB2")),
+        Subsignal("miso", Pins("AC1")),
+        Subsignal("clk", Pins("D13")),
+        Subsignal("cs", Pins("D9")),
         IOStandard("LVCMOS33")
     ),
     ("spi_slave", 3,
-         Subsignal("mosi", Pins("E8")),
-         Subsignal("miso", Pins("D11")),
-         Subsignal("clk", Pins("D13")),
-         Subsignal("cs", Pins("D8")),
+         Subsignal("mosi", Pins("AA1")),
+         Subsignal("miso", Pins("D16")),
+         Subsignal("clk", Pins("E13")),
+         Subsignal("cs", Pins("AB1")),
          IOStandard("LVCMOS33")
      ),
     ("spi_slave", 4,
-         Subsignal("mosi", Pins("AD1")),
-         Subsignal("miso", Pins("AC2")),
-         Subsignal("clk", Pins("E11")),
-         Subsignal("cs", Pins("E19")),
+         Subsignal("mosi", Pins("E10")),
+         Subsignal("miso", Pins("D11")),
+         Subsignal("clk", Pins("B11")),
+         Subsignal("cs", Pins("E8")),
          IOStandard("LVCMOS33")
      ),
     ("spi_slave", 5,
-         Subsignal("mosi", Pins("AB2")),
-         Subsignal("miso", Pins("AA1")),
-         Subsignal("clk", Pins("B11")),
-         Subsignal("cs", Pins("AC1")),
+         Subsignal("mosi", Pins("AC2")),
+         Subsignal("miso", Pins("AD1")),
+         Subsignal("clk", Pins("A3")),
+         Subsignal("cs", Pins("D8")),
          IOStandard("LVCMOS33")
      ),
     ("spi_slave", 6,
-         Subsignal("mosi", Pins("D16")),
+         Subsignal("mosi", Pins("E17")),
          Subsignal("miso", Pins("D18")),
-         Subsignal("clk", Pins("A25")),
-         Subsignal("cs", Pins("D21")),
+         Subsignal("clk", Pins("A12")),
+         Subsignal("cs", Pins("E14")),
          IOStandard("LVCMOS33")
      ),
 
-    ("slot_mlvds", 1, Pins("C18 C17 B23 A18 E21 D22 C22 C21"), IOStandard("LVCMOS33")),
-    ("slot_mlvds", 2, Pins("B17 A21 C19 B19 A23 B21 A19 A22"), IOStandard("LVCMOS33")),
-    ("slot_mlvds", 3, Pins("A17 B16 A16 A14 D10 B14 A13 A6"), IOStandard("LVCMOS33")),
-    ("slot_mlvds", 4, Pins("B13 D17 A11 D19 A10 E14 D6 C11"), IOStandard("LVCMOS33")),
-    ("slot_mlvds", 5, Pins("B10 B8 A9 B6 A8 A5 C6 B4"), IOStandard("LVCMOS33")),
-    ("slot_mlvds", 6, Pins("C10 E6 C5 A4 D5 A3 C9 C8"), IOStandard("LVCMOS33")),
+    ("slot_mlvds", 1, Pins("E21 D22 C22 C17 B23 C21 C19 C18"), IOStandard("LVCMOS33")),
+    ("slot_mlvds", 2, Pins("A22 A21 D19 B21 C16 A15 A14 B14"), IOStandard("LVCMOS33")),
+    ("slot_mlvds", 3, Pins("D17 A19 A18 B17 D10 C11 B6 C9"), IOStandard("LVCMOS33")),
+    ("slot_mlvds", 4, Pins("A17 B16 A16 C14 C8 A5 C5 D6"), IOStandard("LVCMOS33")),
+    ("slot_mlvds", 5, Pins("A13 D14 A11 B10 E6 D5 B13 A10"), IOStandard("LVCMOS33")),
+    ("slot_mlvds", 6, Pins("C10 A9 A8 C6 B8 A6 A4 B4"), IOStandard("LVCMOS33")),
 ]
 
 _connectors_bp = [
@@ -298,29 +298,6 @@ _connector_constraints = [
         [True]*2 + [False, True] + [False]*4 + [True]*8)
 ]
 constraints_dict = {slot[0]: [(slot[1][i], slot[2][i]) for i in range(len(slot[1]))] for slot in _connector_constraints}
-
-def print_compatibility_table():
-    print("| Signal\\Slot |", end="")
-    for i in range(1, 9):
-        print("\t{} |".format(i), end="")
-    print("")
-    for i in range(9):
-        print(" | -----".format(i), end="")
-    print(" |")
-    for i in range(16):
-        print("| {}\t |".format(i), end="")
-        for j in range(1, 9):
-            if j not in [3, 4] and i > 7:
-                print("\t |", end="")
-                continue
-            signal = constraints_dict["slot{}".format(j)][i]
-            if signal[0] == 3.3:
-                print("\t❌️ |", end="")
-            elif signal[1]:
-                print("\t☑️ |", end="")
-            else:
-                print("\t✅️ |", end="")
-        print("")
 
 class Platform(LatticePlatform):
     default_clk_name   = "clk100"
