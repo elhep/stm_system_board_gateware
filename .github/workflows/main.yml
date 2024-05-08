@@ -13,10 +13,9 @@ jobs:
     - uses: DeterminateSystems/magic-nix-cache-action@main
     - run: nix build -L
     - run: nix flake check
-    - name: save bit and svf file
+    - name: Save bit and svf file
       uses: actions/upload-artifact@v4.3.3
       with:
-        path: build/stm_sys_board.bit
-              build/stm_sys_board.svf
+        path: result
   
           
